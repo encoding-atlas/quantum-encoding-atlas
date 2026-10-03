@@ -66,7 +66,9 @@ flowchart TD
     HC2 -- "Fails" --> ELIMINATE
     HC2 -- "Passes / N/A" --> HC3{n_features even?<br/>if requires_even}
     HC3 -- "Fails" --> ELIMINATE
-    HC3 -- "Passes / N/A" --> HC4{n_features <=<br/>max_features?}
+    HC3 -- "Passes / N/A" --> HC3B{n_features >=<br/>min_features?}
+    HC3B -- "Fails" --> ELIMINATE
+    HC3B -- "Passes" --> HC4{n_features <=<br/>max_features?}
     HC4 -- "Fails" --> ELIMINATE
     HC4 -- "Passes / N/A" --> HC5{symmetry ==<br/>requires_symmetry?}
     HC5 -- "Fails" --> ELIMINATE
@@ -117,27 +119,35 @@ flowchart LR
 
 ### Hard Constraints by Encoding
 
-| Encoding | requires_data_type | requires_n_features | requires_even | max_features | requires_symmetry | requires_trainable |
-|---|---|---|---|---|---|---|
-| angle | -- | -- | -- | -- | -- | -- |
-| basis | binary, discrete | -- | -- | -- | -- | -- |
-| higher_order_angle | -- | -- | -- | 10 | -- | -- |
-| iqp | -- | -- | -- | 12 | -- | -- |
-| zz_feature_map | -- | -- | -- | 12 | -- | -- |
-| pauli_feature_map | -- | -- | -- | 12 | -- | -- |
-| data_reuploading | -- | -- | -- | 8 | -- | -- |
-| hardware_efficient | -- | -- | -- | -- | -- | -- |
-| amplitude | -- | -- | -- | -- | -- | -- |
-| qaoa | -- | -- | -- | -- | -- | -- |
-| hamiltonian | -- | -- | -- | -- | -- | -- |
-| trainable | -- | -- | -- | -- | -- | YES |
-| symmetry_inspired | -- | -- | -- | -- | general | -- |
-| so2_equivariant | -- | 2 | -- | 2 | rotation | -- |
-| cyclic_equivariant | -- | -- | -- | -- | cyclic | -- |
-| swap_equivariant | -- | -- | YES | -- | permutation_pairs | -- |
+| Encoding | requires_data_type | requires_n_features | requires_even | min_features | max_features | requires_symmetry | requires_trainable |
+|---|---|---|---|---|---|---|---|
+| angle | -- | -- | -- | -- | -- | -- | -- |
+| basis | binary, discrete | -- | -- | -- | -- | -- | -- |
+| higher_order_angle | -- | -- | -- | 2 | 10 | -- | -- |
+| iqp | -- | -- | -- | -- | 12 | -- | -- |
+| zz_feature_map | -- | -- | -- | -- | 12 | -- | -- |
+| pauli_feature_map | -- | -- | -- | -- | 12 | -- | -- |
+| data_reuploading | -- | -- | -- | -- | 8 | -- | -- |
+| hardware_efficient | -- | -- | -- | -- | -- | -- | -- |
+| amplitude | -- | -- | -- | -- | -- | -- | -- |
+| qaoa | -- | -- | -- | -- | -- | -- | -- |
+| hamiltonian | -- | -- | -- | -- | -- | -- | -- |
+| trainable | -- | -- | -- | -- | -- | -- | YES |
+| symmetry_inspired | -- | -- | YES | 2 | -- | general | -- |
+| so2_equivariant | -- | 2 | YES | 2 | 2 | rotation | -- |
+| cyclic_equivariant | -- | -- | -- | 2 | -- | cyclic | -- |
+| swap_equivariant | -- | -- | YES | 2 | -- | permutation_pairs | -- |
 
 !!! note
     **"--"** means no constraint (always passes).
+
+    `min_features` and `max_features` are not symmetric. `min_features` is a
+    **constructor** limit — below it the encoding raises, so recommending it
+    would hand back a name the caller cannot build. `max_features` is usually
+    **advisory**: the ceiling past which an encoding stops being practical,
+    deliberately set well below what the constructor still accepts (it builds
+    fine one feature above the stated max for all of `higher_order_angle`,
+    `iqp`, `zz_feature_map`, `pauli_feature_map` and `data_reuploading`).
 
 ---
 

@@ -314,10 +314,34 @@ class TestGetMatchingEncodings:
         # IQP has max_features=12, should be excluded
         assert "iqp" not in result
 
+    # =========================================================================
+    # VALID_* constant tests
+    # =========================================================================
 
-# =========================================================================
-# VALID_* constant tests
-# =========================================================================
+    def test_non_overlapping_constraints_keep_the_match(self) -> None:
+        """A constraint that no candidate declares must not filter anything out.
+
+        ``avoid_when`` is an exclusion list: a constraint only removes an
+        encoding that actually carries that tag.
+        """
+        unconstrained = get_matching_encodings(["kernel_methods"], n_features=4)
+        with_constraint = get_matching_encodings(
+            ["kernel_methods"],
+            constraints=["a_tag_no_encoding_declares"],
+            n_features=4,
+        )
+        assert with_constraint == unconstrained
+        assert with_constraint, "fixture is vacuous: no encoding matched"
+
+    def test_overlapping_constraint_removes_only_the_tagged_encoding(self) -> None:
+        matches = get_matching_encodings(["kernel_methods"], n_features=4)
+        assert matches, "fixture is vacuous"
+        tag = ENCODING_RULES[matches[0]]["avoid_when"][0]
+        filtered = get_matching_encodings(
+            ["kernel_methods"], constraints=[tag], n_features=4
+        )
+        assert matches[0] not in filtered
+        assert set(filtered) <= set(matches)
 
 
 class TestValidConstants:

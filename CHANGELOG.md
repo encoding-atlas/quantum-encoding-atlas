@@ -9,6 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### The guide recommended encodings that cannot be constructed
+- `recommend_encoding(n_features=5, symmetry="general")` returned
+  `symmetry_inspired` with confidence 0.88, and building it raised
+  `ValueError: rotation symmetry requires even n_features`. Across a sweep of
+  the full documented input space, **8400 of 190080 queries (4.42%)** named an
+  encoding the caller could not construct at the stated feature count:
+  `symmetry_inspired` at every odd width (4224 queries), plus
+  `cyclic_equivariant`, `higher_order_angle` and `symmetry_inspired` at
+  `n_features=1` (4176).
+- The hard-filter mechanism was never wrong — `_passes_hard_constraints`
+  already checked `requires_even_features`, `requires_n_features` and
+  `max_features`. The rule *data* was: `symmetry_inspired` never declared
+  `requires_even_features` (although `swap_equivariant`, which has the same
+  constraint, did), and no field could express "needs at least two features"
+  at all.
+- `EncodingRule` gains `min_features`, populated for all 16 encodings from each
+  constructor's measured admissible widths, and enforced by the hard filter.
+  `requires_even_features` is now set on `symmetry_inspired` and
+  `so2_equivariant` (the latter was masked by `requires_n_features=2`, so
+  latent rather than live). The sweep now reports **0** unbuildable
+  recommendations.
+- Nothing else moves: across 103680 queries at already-valid feature counts,
+  **no recommendation changed**. Encoding diversity rose from 13 to 15 of 16,
+  because filtering an inapplicable candidate now surfaces the next best one
+  instead of a name that raises.
+
+### Added
+
+#### The rule table is now checked against the encodings themselves
+- `tests/unit/guide/test_rule_consistency.py` asserts the invariant directly:
+  every `(encoding, n_features)` pair the hard filter admits must be
+  constructible. It is exhaustive over all 16 encodings and widths 1-16, so a
+  new encoding or a changed constructor precondition is caught without anyone
+  updating a fixture.
+- The invariant is deliberately one-directional. The rules may be *stricter*
+  than the constructor: `max_features` is advisory for five of the six
+  encodings that set it (`higher_order_angle`, `iqp`, `zz_feature_map`,
+  `pauli_feature_map`, `data_reuploading` all build one feature above their
+  stated ceiling), and that is pinned so a future change cannot widen the rules
+  to match the constructors and undo the deliberate recommendation ceilings.
+- An end-to-end sweep additionally checks that no recommendation, nor any
+  alternative it offers, is unbuildable; and the published constraint table in
+  `docs/guide/recommendation-architecture.md` is checked against
+  `ENCODING_RULES`. A stale table is how the missing flag stayed invisible: the
+  docs accurately described the rules and inaccurately described the encoding.
+- Reintroducing any of the three defects was confirmed to fail the suite
+  (9, 10 and 5 tests respectively).
+
+
 #### A median imputation manufactured the atlas's only robustness claim
 - Stage 7's Monte Carlo weight sweep filled every absent metric with the
   **column median** before ranking. For `entanglement_capability` the absent

@@ -39,8 +39,15 @@ class EncodingRule(TypedDict):
         Tags describing scenarios where this encoding excels.
     avoid_when : list[str]
         Tags describing scenarios where this encoding should be avoided.
+    min_features : int
+        Hard constraint — smallest feature count the encoding can actually be
+        built at. This is a *constructor* limit, not guidance: below it the
+        encoding raises. Always at least 1.
     max_features : int | None
-        Upper bound on feature count (``None`` = no limit).
+        Upper bound on feature count (``None`` = no limit). Unlike
+        ``min_features`` this is usually *advisory* — the recommendation
+        ceiling beyond which an encoding becomes impractical — and is often
+        well below what the constructor still accepts.
     simulable : bool
         Whether the encoding is efficiently classically simulable.
     requires_data_type : list[str] | None
@@ -64,6 +71,7 @@ class EncodingRule(TypedDict):
 
     best_for: list[str]
     avoid_when: list[str]
+    min_features: int
     max_features: int | None
     simulable: bool
     requires_data_type: list[str] | None
@@ -113,6 +121,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "quantum_advantage",
             "feature_interactions",
         ],
+        "min_features": 1,
         "max_features": None,
         "simulable": True,
         "requires_data_type": None,
@@ -135,6 +144,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "feature_interactions",
             "need_entanglement",
         ],
+        "min_features": 1,
         "max_features": None,
         "simulable": True,
         "requires_data_type": ["binary", "discrete"],
@@ -156,6 +166,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "need_entanglement",
             "quantum_advantage",
         ],
+        "min_features": 2,
         "max_features": 10,
         "simulable": True,
         "requires_data_type": None,
@@ -180,6 +191,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "noisy_hardware",
             "nisq_hardware",
         ],
+        "min_features": 1,
         "max_features": 12,
         "simulable": False,
         "requires_data_type": None,
@@ -200,6 +212,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "very_noisy_hardware",
             "many_features",
         ],
+        "min_features": 1,
         "max_features": 12,
         "simulable": False,
         "requires_data_type": None,
@@ -221,6 +234,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "simplicity",
             "very_noisy_hardware",
         ],
+        "min_features": 1,
         "max_features": 12,
         "simulable": False,
         "requires_data_type": None,
@@ -243,6 +257,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "nisq_hardware",
             "speed",
         ],
+        "min_features": 1,
         "max_features": 8,
         "simulable": False,
         "requires_data_type": None,
@@ -263,6 +278,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "simulator_only",
             "quantum_advantage",
         ],
+        "min_features": 1,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
@@ -287,6 +303,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "shallow_circuits",
             "speed",
         ],
+        "min_features": 1,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
@@ -307,6 +324,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "continuous_features_only",
             "speed",
         ],
+        "min_features": 1,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
@@ -328,6 +346,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "simplicity",
             "nisq_hardware",
         ],
+        "min_features": 1,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
@@ -349,6 +368,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "no_optimization_budget",
             "simplicity",
         ],
+        "min_features": 1,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
@@ -372,12 +392,13 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "rigorous_equivariance",
             "speed",
         ],
+        "min_features": 2,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
         "requires_symmetry": "general",
         "requires_n_features": None,
-        "requires_even_features": False,
+        "requires_even_features": True,
         "requires_trainable": False,
         "qubit_scaling": "linear",
         "circuit_depth": "moderate",
@@ -395,12 +416,13 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "many_features",
             "non_2d_data",
         ],
+        "min_features": 2,
         "max_features": 2,
         "simulable": False,
         "requires_data_type": None,
         "requires_symmetry": "rotation",
         "requires_n_features": 2,
-        "requires_even_features": False,
+        "requires_even_features": True,
         "requires_trainable": False,
         "qubit_scaling": "linear",
         "circuit_depth": "moderate",
@@ -414,6 +436,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
         "avoid_when": [
             "non_periodic_data",
         ],
+        "min_features": 2,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
@@ -434,6 +457,7 @@ ENCODING_RULES: dict[str, EncodingRule] = {
             "odd_features",
             "non_paired_data",
         ],
+        "min_features": 2,
         "max_features": None,
         "simulable": False,
         "requires_data_type": None,
@@ -507,7 +531,15 @@ def _passes_hard_constraints(
     ):
         return False
 
-    # 4. Maximum feature-count constraint
+    # 4. Minimum feature-count constraint. A constructor limit, not guidance:
+    #    below it the encoding raises, so recommending it would hand the user
+    #    a name they cannot build.
+    if n_features is not None and n_features < rules["min_features"]:
+        return False
+
+    # 5. Maximum feature-count constraint. Usually advisory — the ceiling past
+    #    which the encoding stops being practical, often well below what the
+    #    constructor still accepts — so it only ever makes the filter stricter.
     if (
         rules["max_features"] is not None
         and n_features is not None
@@ -515,13 +547,13 @@ def _passes_hard_constraints(
     ):
         return False
 
-    # 5. Symmetry constraint — encoding requires a specific symmetry type
+    # 6. Symmetry constraint — encoding requires a specific symmetry type
     if rules["requires_symmetry"] is not None and (
         symmetry is None or symmetry != rules["requires_symmetry"]
     ):
         return False
 
-    # 6. Trainable constraint
+    # 7. Trainable constraint
     if rules["requires_trainable"] and not trainable:
         return False
 
