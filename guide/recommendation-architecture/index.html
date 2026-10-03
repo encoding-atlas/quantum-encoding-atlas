@@ -3470,7 +3470,9 @@
     HC2 -- "Fails" --&gt; ELIMINATE
     HC2 -- "Passes / N/A" --&gt; HC3{n_features even?&lt;br/&gt;if requires_even}
     HC3 -- "Fails" --&gt; ELIMINATE
-    HC3 -- "Passes / N/A" --&gt; HC4{n_features &lt;=&lt;br/&gt;max_features?}
+    HC3 -- "Passes / N/A" --&gt; HC3B{n_features &gt;=&lt;br/&gt;min_features?}
+    HC3B -- "Fails" --&gt; ELIMINATE
+    HC3B -- "Passes" --&gt; HC4{n_features &lt;=&lt;br/&gt;max_features?}
     HC4 -- "Fails" --&gt; ELIMINATE
     HC4 -- "Passes / N/A" --&gt; HC5{symmetry ==&lt;br/&gt;requires_symmetry?}
     HC5 -- "Fails" --&gt; ELIMINATE
@@ -3519,6 +3521,7 @@
 <th>requires_data_type</th>
 <th>requires_n_features</th>
 <th>requires_even</th>
+<th>min_features</th>
 <th>max_features</th>
 <th>requires_symmetry</th>
 <th>requires_trainable</th>
@@ -3527,6 +3530,7 @@
 <tbody>
 <tr>
 <td>angle</td>
+<td>--</td>
 <td>--</td>
 <td>--</td>
 <td>--</td>
@@ -3542,18 +3546,21 @@
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>--</td>
 </tr>
 <tr>
 <td>higher_order_angle</td>
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>2</td>
 <td>10</td>
 <td>--</td>
 <td>--</td>
 </tr>
 <tr>
 <td>iqp</td>
+<td>--</td>
 <td>--</td>
 <td>--</td>
 <td>--</td>
@@ -3566,6 +3573,7 @@
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>--</td>
 <td>12</td>
 <td>--</td>
 <td>--</td>
@@ -3575,12 +3583,14 @@
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>--</td>
 <td>12</td>
 <td>--</td>
 <td>--</td>
 </tr>
 <tr>
 <td>data_reuploading</td>
+<td>--</td>
 <td>--</td>
 <td>--</td>
 <td>--</td>
@@ -3596,9 +3606,11 @@
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>--</td>
 </tr>
 <tr>
 <td>amplitude</td>
+<td>--</td>
 <td>--</td>
 <td>--</td>
 <td>--</td>
@@ -3614,9 +3626,11 @@
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>--</td>
 </tr>
 <tr>
 <td>hamiltonian</td>
+<td>--</td>
 <td>--</td>
 <td>--</td>
 <td>--</td>
@@ -3631,13 +3645,15 @@
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>--</td>
 <td>YES</td>
 </tr>
 <tr>
 <td>symmetry_inspired</td>
 <td>--</td>
 <td>--</td>
-<td>--</td>
+<td>YES</td>
+<td>2</td>
 <td>--</td>
 <td>general</td>
 <td>--</td>
@@ -3646,7 +3662,8 @@
 <td>so2_equivariant</td>
 <td>--</td>
 <td>2</td>
-<td>--</td>
+<td>YES</td>
+<td>2</td>
 <td>2</td>
 <td>rotation</td>
 <td>--</td>
@@ -3656,6 +3673,7 @@
 <td>--</td>
 <td>--</td>
 <td>--</td>
+<td>2</td>
 <td>--</td>
 <td>cyclic</td>
 <td>--</td>
@@ -3665,6 +3683,7 @@
 <td>--</td>
 <td>--</td>
 <td>YES</td>
+<td>2</td>
 <td>--</td>
 <td>permutation_pairs</td>
 <td>--</td>
@@ -3674,6 +3693,13 @@
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p><strong>"--"</strong> means no constraint (always passes).</p>
+<p><code>min_features</code> and <code>max_features</code> are not symmetric. <code>min_features</code> is a
+<strong>constructor</strong> limit — below it the encoding raises, so recommending it
+would hand back a name the caller cannot build. <code>max_features</code> is usually
+<strong>advisory</strong>: the ceiling past which an encoding stops being practical,
+deliberately set well below what the constructor still accepts (it builds
+fine one feature above the stated max for all of <code>higher_order_angle</code>,
+<code>iqp</code>, <code>zz_feature_map</code>, <code>pauli_feature_map</code> and <code>data_reuploading</code>).</p>
 </div>
 <hr />
 <h2 id="phase-b-soft-scoring">Phase B: Soft Scoring<a class="headerlink" href="#phase-b-soft-scoring" title="Anchor link to this section">&para;</a></h2>

@@ -6395,7 +6395,7 @@ appropriately to utilize the full encoding range.</p>
 <p><strong>Comparison with Other Encodings</strong>:</p>
 <p>+-------------------+----------+--------+------------+---------------+
 | Encoding          | Qubits   | Depth  | Entangling | Simulability  |
-+===================+==========+========+============+===============+
++===================+<mark><mark><mark><mark><mark>+<mark><mark><mark><mark>+</mark></mark>====</mark></mark><mark><mark>+</mark></mark></mark></mark></mark></mark></mark>=+
 | AngleEncoding     | n        | reps   | No         | Simulable     |
 +-------------------+----------+--------+------------+---------------+
 | BasisEncoding     | n        | 1      | No         | Simulable     |
@@ -6901,7 +6901,7 @@ data's natural decision boundary.</p>
 <p><strong>Comparison with Other Encodings</strong>:</p>
 <p>+------------------+----------+-------+------------+---------------+
 | Encoding         | Qubits   | Depth | Entangling | Data Type     |
-+==================+==========+=======+============+===============+
++==================+==========+=<mark><mark><mark>+</mark></mark></mark><mark><mark><mark>+</mark></mark></mark>=========+
 | BasisEncoding    | n        | 1     | No         | Binary        |
 +------------------+----------+-------+------------+---------------+
 | AngleEncoding    | n        | 1     | No         | Continuous    |
@@ -7215,7 +7215,7 @@ but executed in superposition.</p>
 <p><strong>Entanglement Topology Trade-offs</strong>:</p>
 <p>+------------+------------------+---------------+------------------------+
 | Topology   | Gate Scaling     | Connectivity  | Best For               |
-+============+==================+===============+========================+
++<mark><mark><mark><mark><mark><mark>+</mark></mark></mark></mark></mark></mark><mark><mark><mark>+</mark></mark></mark><mark><mark><mark><mark>=</mark></mark></mark></mark>=================+
 | full       | O(n²)            | All-to-all    | Max expressivity       |
 +------------+------------------+---------------+------------------------+
 | linear     | O(n)             | Nearest-only  | NISQ devices           |
@@ -7394,7 +7394,7 @@ classically for large qubit counts.</p>
 <h4 id="encoding_atlas.ZZFeatureMap--entanglement-topology-trade-offs">Entanglement Topology Trade-offs<a class="headerlink" href="#encoding_atlas.ZZFeatureMap--entanglement-topology-trade-offs" title="Anchor link to this section">&para;</a></h4>
 <p>+------------+------------------+----------------+------------------+
 | Topology   | Connectivity     | ZZ Pairs       | Hardware         |
-+============+==================+================+==================+
++<mark><mark><mark><mark><mark><mark>+</mark></mark></mark></mark></mark></mark><mark><mark><mark>+</mark></mark></mark><mark><mark><mark><mark><mark>+</mark></mark></mark></mark></mark>========+
 | full       | All-to-all       | n(n-1)/2       | Requires SWAP    |
 |            | (maximum)        | (quadratic)    | gates on most HW |
 +------------+------------------+----------------+------------------+
@@ -7746,7 +7746,7 @@ kernel to capture pairwise correlations.</p>
 <p><strong>Entanglement Topology Trade-offs</strong>:</p>
 <p>+------------+------------------+---------------+------------------------+
 | Topology   | Gate Scaling     | Connectivity  | Best For               |
-+============+==================+===============+========================+
++<mark><mark><mark><mark><mark><mark>+</mark></mark></mark></mark></mark></mark><mark><mark><mark>+</mark></mark></mark><mark><mark><mark><mark>=</mark></mark></mark></mark>=================+
 | full       | O(n²)            | All-to-all    | Max expressivity       |
 +------------+------------------+---------------+------------------------+
 | linear     | O(n)             | Nearest-only  | NISQ devices           |
@@ -7756,7 +7756,7 @@ kernel to capture pairwise correlations.</p>
 <p><strong>Pauli Term Trade-offs</strong>:</p>
 <p>+-------+-------------------+------------------------------------------+
 | Pauli | Gate Overhead     | Notes                                    |
-+=======+===================+==========================================+
++=<mark><mark><mark>+</mark></mark></mark><mark><mark><mark><mark><mark><mark>=</mark></mark></mark></mark></mark></mark>===============================+
 | Z     | Minimal           | Native on most hardware                  |
 +-------+-------------------+------------------------------------------+
 | X     | Low (1 H gate)    | Requires basis change                    |
@@ -16954,39 +16954,7 @@ trainable : bool
 
             <details class="mkdocstrings-source">
               <summary>Source code in <code>src/encoding_atlas/guide/rules.py</code></summary>
-              <div class="language-python highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-536">536</a></span>
-<span class="normal"><a href="#__codelineno-0-537">537</a></span>
-<span class="normal"><a href="#__codelineno-0-538">538</a></span>
-<span class="normal"><a href="#__codelineno-0-539">539</a></span>
-<span class="normal"><a href="#__codelineno-0-540">540</a></span>
-<span class="normal"><a href="#__codelineno-0-541">541</a></span>
-<span class="normal"><a href="#__codelineno-0-542">542</a></span>
-<span class="normal"><a href="#__codelineno-0-543">543</a></span>
-<span class="normal"><a href="#__codelineno-0-544">544</a></span>
-<span class="normal"><a href="#__codelineno-0-545">545</a></span>
-<span class="normal"><a href="#__codelineno-0-546">546</a></span>
-<span class="normal"><a href="#__codelineno-0-547">547</a></span>
-<span class="normal"><a href="#__codelineno-0-548">548</a></span>
-<span class="normal"><a href="#__codelineno-0-549">549</a></span>
-<span class="normal"><a href="#__codelineno-0-550">550</a></span>
-<span class="normal"><a href="#__codelineno-0-551">551</a></span>
-<span class="normal"><a href="#__codelineno-0-552">552</a></span>
-<span class="normal"><a href="#__codelineno-0-553">553</a></span>
-<span class="normal"><a href="#__codelineno-0-554">554</a></span>
-<span class="normal"><a href="#__codelineno-0-555">555</a></span>
-<span class="normal"><a href="#__codelineno-0-556">556</a></span>
-<span class="normal"><a href="#__codelineno-0-557">557</a></span>
-<span class="normal"><a href="#__codelineno-0-558">558</a></span>
-<span class="normal"><a href="#__codelineno-0-559">559</a></span>
-<span class="normal"><a href="#__codelineno-0-560">560</a></span>
-<span class="normal"><a href="#__codelineno-0-561">561</a></span>
-<span class="normal"><a href="#__codelineno-0-562">562</a></span>
-<span class="normal"><a href="#__codelineno-0-563">563</a></span>
-<span class="normal"><a href="#__codelineno-0-564">564</a></span>
-<span class="normal"><a href="#__codelineno-0-565">565</a></span>
-<span class="normal"><a href="#__codelineno-0-566">566</a></span>
-<span class="normal"><a href="#__codelineno-0-567">567</a></span>
-<span class="normal"><a href="#__codelineno-0-568">568</a></span>
+              <div class="language-python highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-568">568</a></span>
 <span class="normal"><a href="#__codelineno-0-569">569</a></span>
 <span class="normal"><a href="#__codelineno-0-570">570</a></span>
 <span class="normal"><a href="#__codelineno-0-571">571</a></span>
@@ -17015,68 +16983,100 @@ trainable : bool
 <span class="normal"><a href="#__codelineno-0-594">594</a></span>
 <span class="normal"><a href="#__codelineno-0-595">595</a></span>
 <span class="normal"><a href="#__codelineno-0-596">596</a></span>
-<span class="normal"><a href="#__codelineno-0-597">597</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-0-536"><a id="__codelineno-0-536" name="__codelineno-0-536"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_matching_encodings</span><span class="p">(</span>
-</span><span id="__span-0-537"><a id="__codelineno-0-537" name="__codelineno-0-537"></a>    <span class="n">requirements</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
-</span><span id="__span-0-538"><a id="__codelineno-0-538" name="__codelineno-0-538"></a>    <span class="n">constraints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="__span-0-539"><a id="__codelineno-0-539" name="__codelineno-0-539"></a>    <span class="o">*</span><span class="p">,</span>
-</span><span id="__span-0-540"><a id="__codelineno-0-540" name="__codelineno-0-540"></a>    <span class="n">n_features</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="__span-0-541"><a id="__codelineno-0-541" name="__codelineno-0-541"></a>    <span class="n">data_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"continuous"</span><span class="p">,</span>
-</span><span id="__span-0-542"><a id="__codelineno-0-542" name="__codelineno-0-542"></a>    <span class="n">symmetry</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="__span-0-543"><a id="__codelineno-0-543" name="__codelineno-0-543"></a>    <span class="n">trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-</span><span id="__span-0-544"><a id="__codelineno-0-544" name="__codelineno-0-544"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
-</span><span id="__span-0-545"><a id="__codelineno-0-545" name="__codelineno-0-545"></a><span class="w">    </span><span class="sd">"""Get encodings matching requirements, constraints, and hard filters.</span>
-</span><span id="__span-0-546"><a id="__codelineno-0-546" name="__codelineno-0-546"></a>
-</span><span id="__span-0-547"><a id="__codelineno-0-547" name="__codelineno-0-547"></a><span class="sd">    This performs a two-phase check for each encoding:</span>
-</span><span id="__span-0-548"><a id="__codelineno-0-548" name="__codelineno-0-548"></a>
-</span><span id="__span-0-549"><a id="__codelineno-0-549" name="__codelineno-0-549"></a><span class="sd">    1. **Hard filter** — eliminates encodings whose structural preconditions</span>
-</span><span id="__span-0-550"><a id="__codelineno-0-550" name="__codelineno-0-550"></a><span class="sd">       are not met (data type, feature count, symmetry, trainability).</span>
-</span><span id="__span-0-551"><a id="__codelineno-0-551" name="__codelineno-0-551"></a><span class="sd">    2. **Soft match** — among survivors, selects those whose ``best_for`` tags</span>
-</span><span id="__span-0-552"><a id="__codelineno-0-552" name="__codelineno-0-552"></a><span class="sd">       overlap with *requirements* and whose ``avoid_when`` tags do not overlap</span>
-</span><span id="__span-0-553"><a id="__codelineno-0-553" name="__codelineno-0-553"></a><span class="sd">       with *constraints*.</span>
-</span><span id="__span-0-554"><a id="__codelineno-0-554" name="__codelineno-0-554"></a>
-</span><span id="__span-0-555"><a id="__codelineno-0-555" name="__codelineno-0-555"></a><span class="sd">    Parameters</span>
-</span><span id="__span-0-556"><a id="__codelineno-0-556" name="__codelineno-0-556"></a><span class="sd">    ----------</span>
-</span><span id="__span-0-557"><a id="__codelineno-0-557" name="__codelineno-0-557"></a><span class="sd">    requirements : list[str]</span>
-</span><span id="__span-0-558"><a id="__codelineno-0-558" name="__codelineno-0-558"></a><span class="sd">        Tags the encoding should be good at (matched against ``best_for``).</span>
-</span><span id="__span-0-559"><a id="__codelineno-0-559" name="__codelineno-0-559"></a><span class="sd">    constraints : list[str] | None</span>
-</span><span id="__span-0-560"><a id="__codelineno-0-560" name="__codelineno-0-560"></a><span class="sd">        Tags the encoding should *not* be associated with (matched against</span>
-</span><span id="__span-0-561"><a id="__codelineno-0-561" name="__codelineno-0-561"></a><span class="sd">        ``avoid_when``).  ``None`` means no soft constraints.</span>
-</span><span id="__span-0-562"><a id="__codelineno-0-562" name="__codelineno-0-562"></a><span class="sd">    n_features : int | None</span>
-</span><span id="__span-0-563"><a id="__codelineno-0-563" name="__codelineno-0-563"></a><span class="sd">        Number of input features for hard-filter checks.</span>
-</span><span id="__span-0-564"><a id="__codelineno-0-564" name="__codelineno-0-564"></a><span class="sd">    data_type : str</span>
-</span><span id="__span-0-565"><a id="__codelineno-0-565" name="__codelineno-0-565"></a><span class="sd">        Data type for hard-filter checks.</span>
-</span><span id="__span-0-566"><a id="__codelineno-0-566" name="__codelineno-0-566"></a><span class="sd">    symmetry : str | None</span>
-</span><span id="__span-0-567"><a id="__codelineno-0-567" name="__codelineno-0-567"></a><span class="sd">        Symmetry type for hard-filter checks.</span>
-</span><span id="__span-0-568"><a id="__codelineno-0-568" name="__codelineno-0-568"></a><span class="sd">    trainable : bool</span>
-</span><span id="__span-0-569"><a id="__codelineno-0-569" name="__codelineno-0-569"></a><span class="sd">        Trainable flag for hard-filter checks.</span>
-</span><span id="__span-0-570"><a id="__codelineno-0-570" name="__codelineno-0-570"></a>
-</span><span id="__span-0-571"><a id="__codelineno-0-571" name="__codelineno-0-571"></a><span class="sd">    Returns</span>
-</span><span id="__span-0-572"><a id="__codelineno-0-572" name="__codelineno-0-572"></a><span class="sd">    -------</span>
-</span><span id="__span-0-573"><a id="__codelineno-0-573" name="__codelineno-0-573"></a><span class="sd">    list[str]</span>
-</span><span id="__span-0-574"><a id="__codelineno-0-574" name="__codelineno-0-574"></a><span class="sd">        Encoding names that pass both hard and soft filters.</span>
-</span><span id="__span-0-575"><a id="__codelineno-0-575" name="__codelineno-0-575"></a><span class="sd">    """</span>
-</span><span id="__span-0-576"><a id="__codelineno-0-576" name="__codelineno-0-576"></a>    <span class="n">matches</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-</span><span id="__span-0-577"><a id="__codelineno-0-577" name="__codelineno-0-577"></a>
-</span><span id="__span-0-578"><a id="__codelineno-0-578" name="__codelineno-0-578"></a>    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">rules</span> <span class="ow">in</span> <span class="n">ENCODING_RULES</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-</span><span id="__span-0-579"><a id="__codelineno-0-579" name="__codelineno-0-579"></a>        <span class="c1"># Phase A — hard filter</span>
-</span><span id="__span-0-580"><a id="__codelineno-0-580" name="__codelineno-0-580"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">_passes_hard_constraints</span><span class="p">(</span>
-</span><span id="__span-0-581"><a id="__codelineno-0-581" name="__codelineno-0-581"></a>            <span class="n">rules</span><span class="p">,</span>
-</span><span id="__span-0-582"><a id="__codelineno-0-582" name="__codelineno-0-582"></a>            <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
-</span><span id="__span-0-583"><a id="__codelineno-0-583" name="__codelineno-0-583"></a>            <span class="n">data_type</span><span class="o">=</span><span class="n">data_type</span><span class="p">,</span>
-</span><span id="__span-0-584"><a id="__codelineno-0-584" name="__codelineno-0-584"></a>            <span class="n">symmetry</span><span class="o">=</span><span class="n">symmetry</span><span class="p">,</span>
-</span><span id="__span-0-585"><a id="__codelineno-0-585" name="__codelineno-0-585"></a>            <span class="n">trainable</span><span class="o">=</span><span class="n">trainable</span><span class="p">,</span>
-</span><span id="__span-0-586"><a id="__codelineno-0-586" name="__codelineno-0-586"></a>        <span class="p">):</span>
-</span><span id="__span-0-587"><a id="__codelineno-0-587" name="__codelineno-0-587"></a>            <span class="k">continue</span>
-</span><span id="__span-0-588"><a id="__codelineno-0-588" name="__codelineno-0-588"></a>
-</span><span id="__span-0-589"><a id="__codelineno-0-589" name="__codelineno-0-589"></a>        <span class="c1"># Phase B — soft tag match</span>
-</span><span id="__span-0-590"><a id="__codelineno-0-590" name="__codelineno-0-590"></a>        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">req</span> <span class="ow">in</span> <span class="n">rules</span><span class="p">[</span><span class="s2">"best_for"</span><span class="p">]</span> <span class="k">for</span> <span class="n">req</span> <span class="ow">in</span> <span class="n">requirements</span><span class="p">):</span>
-</span><span id="__span-0-591"><a id="__codelineno-0-591" name="__codelineno-0-591"></a>            <span class="k">if</span> <span class="n">constraints</span><span class="p">:</span>
-</span><span id="__span-0-592"><a id="__codelineno-0-592" name="__codelineno-0-592"></a>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">rules</span><span class="p">[</span><span class="s2">"avoid_when"</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">constraints</span><span class="p">):</span>
-</span><span id="__span-0-593"><a id="__codelineno-0-593" name="__codelineno-0-593"></a>                    <span class="n">matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-</span><span id="__span-0-594"><a id="__codelineno-0-594" name="__codelineno-0-594"></a>            <span class="k">else</span><span class="p">:</span>
-</span><span id="__span-0-595"><a id="__codelineno-0-595" name="__codelineno-0-595"></a>                <span class="n">matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-</span><span id="__span-0-596"><a id="__codelineno-0-596" name="__codelineno-0-596"></a>
-</span><span id="__span-0-597"><a id="__codelineno-0-597" name="__codelineno-0-597"></a>    <span class="k">return</span> <span class="n">matches</span>
+<span class="normal"><a href="#__codelineno-0-597">597</a></span>
+<span class="normal"><a href="#__codelineno-0-598">598</a></span>
+<span class="normal"><a href="#__codelineno-0-599">599</a></span>
+<span class="normal"><a href="#__codelineno-0-600">600</a></span>
+<span class="normal"><a href="#__codelineno-0-601">601</a></span>
+<span class="normal"><a href="#__codelineno-0-602">602</a></span>
+<span class="normal"><a href="#__codelineno-0-603">603</a></span>
+<span class="normal"><a href="#__codelineno-0-604">604</a></span>
+<span class="normal"><a href="#__codelineno-0-605">605</a></span>
+<span class="normal"><a href="#__codelineno-0-606">606</a></span>
+<span class="normal"><a href="#__codelineno-0-607">607</a></span>
+<span class="normal"><a href="#__codelineno-0-608">608</a></span>
+<span class="normal"><a href="#__codelineno-0-609">609</a></span>
+<span class="normal"><a href="#__codelineno-0-610">610</a></span>
+<span class="normal"><a href="#__codelineno-0-611">611</a></span>
+<span class="normal"><a href="#__codelineno-0-612">612</a></span>
+<span class="normal"><a href="#__codelineno-0-613">613</a></span>
+<span class="normal"><a href="#__codelineno-0-614">614</a></span>
+<span class="normal"><a href="#__codelineno-0-615">615</a></span>
+<span class="normal"><a href="#__codelineno-0-616">616</a></span>
+<span class="normal"><a href="#__codelineno-0-617">617</a></span>
+<span class="normal"><a href="#__codelineno-0-618">618</a></span>
+<span class="normal"><a href="#__codelineno-0-619">619</a></span>
+<span class="normal"><a href="#__codelineno-0-620">620</a></span>
+<span class="normal"><a href="#__codelineno-0-621">621</a></span>
+<span class="normal"><a href="#__codelineno-0-622">622</a></span>
+<span class="normal"><a href="#__codelineno-0-623">623</a></span>
+<span class="normal"><a href="#__codelineno-0-624">624</a></span>
+<span class="normal"><a href="#__codelineno-0-625">625</a></span>
+<span class="normal"><a href="#__codelineno-0-626">626</a></span>
+<span class="normal"><a href="#__codelineno-0-627">627</a></span>
+<span class="normal"><a href="#__codelineno-0-628">628</a></span>
+<span class="normal"><a href="#__codelineno-0-629">629</a></span></pre></div></td><td class="code"><div><pre><span></span><code><span id="__span-0-568"><a id="__codelineno-0-568" name="__codelineno-0-568"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_matching_encodings</span><span class="p">(</span>
+</span><span id="__span-0-569"><a id="__codelineno-0-569" name="__codelineno-0-569"></a>    <span class="n">requirements</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+</span><span id="__span-0-570"><a id="__codelineno-0-570" name="__codelineno-0-570"></a>    <span class="n">constraints</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-571"><a id="__codelineno-0-571" name="__codelineno-0-571"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-572"><a id="__codelineno-0-572" name="__codelineno-0-572"></a>    <span class="n">n_features</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-573"><a id="__codelineno-0-573" name="__codelineno-0-573"></a>    <span class="n">data_type</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"continuous"</span><span class="p">,</span>
+</span><span id="__span-0-574"><a id="__codelineno-0-574" name="__codelineno-0-574"></a>    <span class="n">symmetry</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-575"><a id="__codelineno-0-575" name="__codelineno-0-575"></a>    <span class="n">trainable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-0-576"><a id="__codelineno-0-576" name="__codelineno-0-576"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+</span><span id="__span-0-577"><a id="__codelineno-0-577" name="__codelineno-0-577"></a><span class="w">    </span><span class="sd">"""Get encodings matching requirements, constraints, and hard filters.</span>
+</span><span id="__span-0-578"><a id="__codelineno-0-578" name="__codelineno-0-578"></a>
+</span><span id="__span-0-579"><a id="__codelineno-0-579" name="__codelineno-0-579"></a><span class="sd">    This performs a two-phase check for each encoding:</span>
+</span><span id="__span-0-580"><a id="__codelineno-0-580" name="__codelineno-0-580"></a>
+</span><span id="__span-0-581"><a id="__codelineno-0-581" name="__codelineno-0-581"></a><span class="sd">    1. **Hard filter** — eliminates encodings whose structural preconditions</span>
+</span><span id="__span-0-582"><a id="__codelineno-0-582" name="__codelineno-0-582"></a><span class="sd">       are not met (data type, feature count, symmetry, trainability).</span>
+</span><span id="__span-0-583"><a id="__codelineno-0-583" name="__codelineno-0-583"></a><span class="sd">    2. **Soft match** — among survivors, selects those whose ``best_for`` tags</span>
+</span><span id="__span-0-584"><a id="__codelineno-0-584" name="__codelineno-0-584"></a><span class="sd">       overlap with *requirements* and whose ``avoid_when`` tags do not overlap</span>
+</span><span id="__span-0-585"><a id="__codelineno-0-585" name="__codelineno-0-585"></a><span class="sd">       with *constraints*.</span>
+</span><span id="__span-0-586"><a id="__codelineno-0-586" name="__codelineno-0-586"></a>
+</span><span id="__span-0-587"><a id="__codelineno-0-587" name="__codelineno-0-587"></a><span class="sd">    Parameters</span>
+</span><span id="__span-0-588"><a id="__codelineno-0-588" name="__codelineno-0-588"></a><span class="sd">    ----------</span>
+</span><span id="__span-0-589"><a id="__codelineno-0-589" name="__codelineno-0-589"></a><span class="sd">    requirements : list[str]</span>
+</span><span id="__span-0-590"><a id="__codelineno-0-590" name="__codelineno-0-590"></a><span class="sd">        Tags the encoding should be good at (matched against ``best_for``).</span>
+</span><span id="__span-0-591"><a id="__codelineno-0-591" name="__codelineno-0-591"></a><span class="sd">    constraints : list[str] | None</span>
+</span><span id="__span-0-592"><a id="__codelineno-0-592" name="__codelineno-0-592"></a><span class="sd">        Tags the encoding should *not* be associated with (matched against</span>
+</span><span id="__span-0-593"><a id="__codelineno-0-593" name="__codelineno-0-593"></a><span class="sd">        ``avoid_when``).  ``None`` means no soft constraints.</span>
+</span><span id="__span-0-594"><a id="__codelineno-0-594" name="__codelineno-0-594"></a><span class="sd">    n_features : int | None</span>
+</span><span id="__span-0-595"><a id="__codelineno-0-595" name="__codelineno-0-595"></a><span class="sd">        Number of input features for hard-filter checks.</span>
+</span><span id="__span-0-596"><a id="__codelineno-0-596" name="__codelineno-0-596"></a><span class="sd">    data_type : str</span>
+</span><span id="__span-0-597"><a id="__codelineno-0-597" name="__codelineno-0-597"></a><span class="sd">        Data type for hard-filter checks.</span>
+</span><span id="__span-0-598"><a id="__codelineno-0-598" name="__codelineno-0-598"></a><span class="sd">    symmetry : str | None</span>
+</span><span id="__span-0-599"><a id="__codelineno-0-599" name="__codelineno-0-599"></a><span class="sd">        Symmetry type for hard-filter checks.</span>
+</span><span id="__span-0-600"><a id="__codelineno-0-600" name="__codelineno-0-600"></a><span class="sd">    trainable : bool</span>
+</span><span id="__span-0-601"><a id="__codelineno-0-601" name="__codelineno-0-601"></a><span class="sd">        Trainable flag for hard-filter checks.</span>
+</span><span id="__span-0-602"><a id="__codelineno-0-602" name="__codelineno-0-602"></a>
+</span><span id="__span-0-603"><a id="__codelineno-0-603" name="__codelineno-0-603"></a><span class="sd">    Returns</span>
+</span><span id="__span-0-604"><a id="__codelineno-0-604" name="__codelineno-0-604"></a><span class="sd">    -------</span>
+</span><span id="__span-0-605"><a id="__codelineno-0-605" name="__codelineno-0-605"></a><span class="sd">    list[str]</span>
+</span><span id="__span-0-606"><a id="__codelineno-0-606" name="__codelineno-0-606"></a><span class="sd">        Encoding names that pass both hard and soft filters.</span>
+</span><span id="__span-0-607"><a id="__codelineno-0-607" name="__codelineno-0-607"></a><span class="sd">    """</span>
+</span><span id="__span-0-608"><a id="__codelineno-0-608" name="__codelineno-0-608"></a>    <span class="n">matches</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+</span><span id="__span-0-609"><a id="__codelineno-0-609" name="__codelineno-0-609"></a>
+</span><span id="__span-0-610"><a id="__codelineno-0-610" name="__codelineno-0-610"></a>    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">rules</span> <span class="ow">in</span> <span class="n">ENCODING_RULES</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+</span><span id="__span-0-611"><a id="__codelineno-0-611" name="__codelineno-0-611"></a>        <span class="c1"># Phase A — hard filter</span>
+</span><span id="__span-0-612"><a id="__codelineno-0-612" name="__codelineno-0-612"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="n">_passes_hard_constraints</span><span class="p">(</span>
+</span><span id="__span-0-613"><a id="__codelineno-0-613" name="__codelineno-0-613"></a>            <span class="n">rules</span><span class="p">,</span>
+</span><span id="__span-0-614"><a id="__codelineno-0-614" name="__codelineno-0-614"></a>            <span class="n">n_features</span><span class="o">=</span><span class="n">n_features</span><span class="p">,</span>
+</span><span id="__span-0-615"><a id="__codelineno-0-615" name="__codelineno-0-615"></a>            <span class="n">data_type</span><span class="o">=</span><span class="n">data_type</span><span class="p">,</span>
+</span><span id="__span-0-616"><a id="__codelineno-0-616" name="__codelineno-0-616"></a>            <span class="n">symmetry</span><span class="o">=</span><span class="n">symmetry</span><span class="p">,</span>
+</span><span id="__span-0-617"><a id="__codelineno-0-617" name="__codelineno-0-617"></a>            <span class="n">trainable</span><span class="o">=</span><span class="n">trainable</span><span class="p">,</span>
+</span><span id="__span-0-618"><a id="__codelineno-0-618" name="__codelineno-0-618"></a>        <span class="p">):</span>
+</span><span id="__span-0-619"><a id="__codelineno-0-619" name="__codelineno-0-619"></a>            <span class="k">continue</span>
+</span><span id="__span-0-620"><a id="__codelineno-0-620" name="__codelineno-0-620"></a>
+</span><span id="__span-0-621"><a id="__codelineno-0-621" name="__codelineno-0-621"></a>        <span class="c1"># Phase B — soft tag match</span>
+</span><span id="__span-0-622"><a id="__codelineno-0-622" name="__codelineno-0-622"></a>        <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">req</span> <span class="ow">in</span> <span class="n">rules</span><span class="p">[</span><span class="s2">"best_for"</span><span class="p">]</span> <span class="k">for</span> <span class="n">req</span> <span class="ow">in</span> <span class="n">requirements</span><span class="p">):</span>
+</span><span id="__span-0-623"><a id="__codelineno-0-623" name="__codelineno-0-623"></a>            <span class="k">if</span> <span class="n">constraints</span><span class="p">:</span>
+</span><span id="__span-0-624"><a id="__codelineno-0-624" name="__codelineno-0-624"></a>                <span class="k">if</span> <span class="ow">not</span> <span class="nb">any</span><span class="p">(</span><span class="n">c</span> <span class="ow">in</span> <span class="n">rules</span><span class="p">[</span><span class="s2">"avoid_when"</span><span class="p">]</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">constraints</span><span class="p">):</span>
+</span><span id="__span-0-625"><a id="__codelineno-0-625" name="__codelineno-0-625"></a>                    <span class="n">matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+</span><span id="__span-0-626"><a id="__codelineno-0-626" name="__codelineno-0-626"></a>            <span class="k">else</span><span class="p">:</span>
+</span><span id="__span-0-627"><a id="__codelineno-0-627" name="__codelineno-0-627"></a>                <span class="n">matches</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+</span><span id="__span-0-628"><a id="__codelineno-0-628" name="__codelineno-0-628"></a>
+</span><span id="__span-0-629"><a id="__codelineno-0-629" name="__codelineno-0-629"></a>    <span class="k">return</span> <span class="n">matches</span>
 </span></code></pre></div></td></tr></table></div>
             </details>
     </div>
