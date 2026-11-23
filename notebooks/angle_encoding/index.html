@@ -9,7 +9,7 @@
         <meta name="description" content="A comprehensive Python library for quantum data encodings in machine learning. 16 encoding methods with a unified API across PennyLane, Qiskit, and Cirq.">
       
       
-        <meta name="author" content="Ashutosh Mishra">
+        <meta name="author" content="Quantum Encoding Atlas Authors">
       
       
         <link rel="canonical" href="https://encoding-atlas.github.io/quantum-encoding-atlas/notebooks/angle_encoding/">
@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -33,10 +33,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
   
@@ -8380,7 +8380,7 @@ print(f"  (0 = untrainable / barren plateau, 1 = fully trainable)")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Trainability estimate: 0.1865
+<pre>Trainability estimate: 0.7195
   (0 = untrainable / barren plateau, 1 = fully trainable)
 </pre>
 </div>
@@ -8448,14 +8448,15 @@ print(f"  per_parameter_variance: {train_detailed['per_parameter_variance']}")</
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>=== TrainabilityResult ===
-  trainability_estimate : 0.1865
-  gradient_variance     : 0.018346
+  trainability_estimate : 0.7195
+  gradient_variance     : 0.295807
   barren_plateau_risk   : 'low'
   effective_dimension   : 3.00
   n_samples             : 200
   n_successful_samples  : 200
   n_failed_samples      : 0
-  per_parameter_variance: [0.02235021 0.01605254 0.01663407]
+  per_parameter_variance: [3.67000260e-01 1.38338312e-01 2.04376522e-33 3.82083041e-01
+ 1.08086198e-33 1.72820971e-33]
 </pre>
 </div>
 </div>
@@ -8504,9 +8505,9 @@ for obs in ["computational", "pauli_z", "global_z"]:
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>=== Trainability with different observables ===
-  computational  : 0.1865
-  pauli_z        : 0.6237
-  global_z       : 0.5539
+  computational  : 0.1417
+  pauli_z        : 0.7195
+  global_z       : 0.5503
 </pre>
 </div>
 </div>
@@ -8558,7 +8559,7 @@ print(f"  (AngleEncoding is expected to have 'low' risk)")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Gradient variance: 0.018346
+<pre>Gradient variance: 0.295807
 Barren plateau risk: 'low'
   (AngleEncoding is expected to have 'low' risk)
 </pre>
@@ -11088,7 +11089,7 @@ print(f"  Verified: analytical kernel matches simulation to machine precision.")
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2026 Quantum Encoding Atlas Contributors
+      Copyright &copy; 2026 Quantum Encoding Atlas Authors
     </div>
   
   
@@ -11130,10 +11131,10 @@ print(f"  Verified: analytical kernel matches simulation to machine precision.")
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["announce.dismiss", "content.code.annotate", "content.code.copy", "content.code.select", "content.tabs.link", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": {"Entangling": "entangling", "Equivariant": "equivariant", "Hardware-Friendly": "hardware-friendly", "Simulable": "simulable", "Variational": "variational"}, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["announce.dismiss", "content.code.annotate", "content.code.copy", "content.code.select", "content.tabs.link", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": {"Entangling": "entangling", "Equivariant": "equivariant", "Hardware-Friendly": "hardware-friendly", "Simulable": "simulable", "Variational": "variational"}, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
         <script src="../../javascripts/mathjax.js"></script>
       

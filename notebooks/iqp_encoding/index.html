@@ -9,7 +9,7 @@
         <meta name="description" content="A comprehensive Python library for quantum data encodings in machine learning. 16 encoding methods with a unified API across PennyLane, Qiskit, and Cirq.">
       
       
-        <meta name="author" content="Ashutosh Mishra">
+        <meta name="author" content="Quantum Encoding Atlas Authors">
       
       
         <link rel="canonical" href="https://encoding-atlas.github.io/quantum-encoding-atlas/notebooks/iqp_encoding/">
@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -33,10 +33,10 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
       
       
   
@@ -4601,7 +4601,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h1 id="iqpencoding-complete-feature-demonstration">IQPEncoding: Complete Feature Demonstration<a class="anchor-link" href="#iqpencoding-complete-feature-demonstration">¶</a></h1><p><strong>Library:</strong> <a href="https://pypi.org/project/encoding-atlas/0.2.0/">encoding-atlas</a>
 <strong>Version:</strong> 0.2.0
-<strong>Author:</strong> Ashutosh Mishra</p>
+<strong>Author:</strong> Quantum Encoding Atlas Authors</p>
 <hr/>
 <p>This notebook provides an exhaustive, hands-on demonstration of <strong>IQPEncoding</strong> from the Quantum Encoding Atlas library. IQPEncoding implements Instantaneous Quantum Polynomial (IQP) circuits for quantum machine learning, creating highly entangled quantum states with provable classical hardness guarantees.</p>
 <h3 id="what-this-notebook-covers">What This Notebook Covers<a class="anchor-link" href="#what-this-notebook-covers">¶</a></h3><table>
@@ -9225,7 +9225,7 @@ print("\n  Full entanglement typically produces the highest entanglement capabil
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <hr/>
-<h2 id="19-trainability-analysis">19. Trainability Analysis<a class="anchor-link" href="#19-trainability-analysis">¶</a></h2><p>IQP encoding's trainability decreases with depth (reps) due to the entangling nature of the circuit. Deep IQP circuits may exhibit barren plateaus.</p>
+<h2 id="19-trainability-analysis">19. Trainability Analysis<a class="anchor-link" href="#19-trainability-analysis">¶</a></h2><p>IQP encoding's trainability is governed mainly by width rather than by <code>reps</code>: its all-to-all entanglers spread every feature across every qubit, so the reduced state that a classifier's read-out sees concentrates as the number of qubits grows — an encoding-induced barren plateau.</p>
 </div>
 </div>
 </div>
@@ -9276,7 +9276,7 @@ print(f"  (0 = untrainable / barren plateau, 1 = fully trainable)")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Trainability estimate: 0.0817
+<pre>Trainability estimate: 0.5278
   (0 = untrainable / barren plateau, 1 = fully trainable)
 </pre>
 </div>
@@ -9344,14 +9344,15 @@ print(f"  per_parameter_variance: {train_detailed['per_parameter_variance']}")</
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>=== TrainabilityResult ===
-  trainability_estimate : 0.0817
-  gradient_variance     : 0.006168
+  trainability_estimate : 0.5278
+  gradient_variance     : 0.113657
   barren_plateau_risk   : 'low'
   effective_dimension   : 3.00
   n_samples             : 200
   n_successful_samples  : 200
   n_failed_samples      : 0
-  per_parameter_variance: [0.00591405 0.00681095 0.00578007]
+  per_parameter_variance: [1.38156160e-01 6.14843050e-02 1.49619596e-33 1.41330401e-01
+ 8.28673334e-34 8.10076132e-34]
 </pre>
 </div>
 </div>
@@ -9408,10 +9409,10 @@ print("\n  Trainability decreases with depth as expected.")</div>
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
 <pre>=== Trainability vs reps (n=3, full entanglement) ===
-  reps=1: estimated=0.0000, theoretical=0.8
-  reps=2: estimated=0.0817, theoretical=0.7
-  reps=3: estimated=0.1733, theoretical=0.6
-  reps=5: estimated=0.1533, theoretical=0.4
+  reps=1: estimated=0.4314, theoretical=0.8
+  reps=2: estimated=0.5278, theoretical=0.7
+  reps=3: estimated=0.5345, theoretical=0.6
+  reps=5: estimated=0.5288, theoretical=0.4
 
   Trainability decreases with depth as expected.
 </pre>
@@ -9463,7 +9464,7 @@ print(f"Barren plateau risk: {bp_risk!r}")</div>
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>Gradient variance: 0.006168
+<pre>Gradient variance: 0.113657
 Barren plateau risk: 'low'
 </pre>
 </div>
@@ -12094,7 +12095,7 @@ print("  potentially providing richer decision boundaries than product-state enc
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2026 Quantum Encoding Atlas Contributors
+      Copyright &copy; 2026 Quantum Encoding Atlas Authors
     </div>
   
   
@@ -12136,10 +12137,10 @@ print("  potentially providing richer decision boundaries than product-state enc
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["announce.dismiss", "content.code.annotate", "content.code.copy", "content.code.select", "content.tabs.link", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": {"Entangling": "entangling", "Equivariant": "equivariant", "Hardware-Friendly": "hardware-friendly", "Simulable": "simulable", "Variational": "variational"}, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["announce.dismiss", "content.code.annotate", "content.code.copy", "content.code.select", "content.tabs.link", "content.tooltips", "navigation.footer", "navigation.indexes", "navigation.instant", "navigation.instant.prefetch", "navigation.instant.progress", "navigation.path", "navigation.sections", "navigation.tabs", "navigation.tabs.sticky", "navigation.top", "navigation.tracking", "search.highlight", "search.share", "search.suggest", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": {"Entangling": "entangling", "Equivariant": "equivariant", "Hardware-Friendly": "hardware-friendly", "Simulable": "simulable", "Variational": "variational"}, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
         <script src="../../javascripts/mathjax.js"></script>
       
