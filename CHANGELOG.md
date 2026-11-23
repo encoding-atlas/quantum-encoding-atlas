@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### Attribution
+- The project is attributed to the **Quantum Encoding Atlas Authors**
+  throughout: the `LICENSE` copyright line, `CITATION.cff` (an entity author),
+  the `pyproject.toml` authors and maintainers (and so the package metadata),
+  `AUTHORS.md`, the README's BibTeX entry, the documentation's author and
+  footer, and the notebooks' author lines. The contact address is unchanged.
+
 ### Fixed
 
 #### Trainability did not measure a derivative, or trainability

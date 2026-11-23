@@ -3,7 +3,7 @@
 # Each line defines a pattern and the GitHub users/teams who own those files.
 # Owners are automatically added as reviewers on PRs that modify matching files.
 
-# Default: Ashutosh Mishra owns everything
+# Default: the Quantum Encoding Atlas Authors own everything
 * @ashutoshm1771
 
 # Core package

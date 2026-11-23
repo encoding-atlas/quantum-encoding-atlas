@@ -4,8 +4,7 @@ message: "If you use this software, please cite it as below."
 type: software
 doi: "10.5281/zenodo.18780936"
 authors:
-  - family-names: "Mishra"
-    given-names: "Ashutosh"
+  - name: "Quantum Encoding Atlas Authors"
     email: "ashutoshm1771@gmail.com"
 repository-code: "https://github.com/encoding-atlas/quantum-encoding-atlas"
 url: "https://encoding-atlas.github.io/quantum-encoding-atlas"

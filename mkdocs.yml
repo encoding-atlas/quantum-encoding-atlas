@@ -3,7 +3,7 @@ site_url: https://encoding-atlas.github.io/quantum-encoding-atlas/
 site_description: >-
   A comprehensive Python library for quantum data encodings in machine learning.
   16 encoding methods with a unified API across PennyLane, Qiskit, and Cirq.
-site_author: Ashutosh Mishra
+site_author: Quantum Encoding Atlas Authors
 repo_url: https://github.com/encoding-atlas/quantum-encoding-atlas
 repo_name: encoding-atlas/quantum-encoding-atlas
 edit_uri: edit/main/docs/
@@ -11,7 +11,7 @@ edit_uri: edit/main/docs/
 hooks:
   - docs/hooks/version_hook.py
 
-copyright: Copyright &copy; 2026 Quantum Encoding Atlas Contributors
+copyright: Copyright &copy; 2026 Quantum Encoding Atlas Authors
 
 theme:
   name: material

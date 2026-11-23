@@ -141,7 +141,7 @@ jobs:
       - name: Commit and push if changed
         run: |
           git diff --quiet && exit 0
-          git config user.name "Ashutosh Mishra"
+          git config user.name "Quantum Encoding Atlas Authors"
           git config user.email "ashutoshm1771@gmail.com"
           git add CITATION.cff README.md
           git commit -m "chore: update version metadata to ${{ steps.meta.outputs.version }}"

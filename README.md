@@ -421,9 +421,9 @@ See the [full encoding list](https://encoding-atlas.github.io/quantum-encoding-a
 If you use this library in your research, please cite:
 
 ```bibtex
-@software{Mishra2026encoding,
+@software{QuantumEncodingAtlas2026,
   title={Quantum Encoding Atlas: A Comprehensive Library for Quantum Data Encodings},
-  author={Mishra, Ashutosh},
+  author={{Quantum Encoding Atlas Authors}},
   year={2026},
   doi={10.5281/zenodo.18780936},
   url={https://doi.org/10.5281/zenodo.18780936},

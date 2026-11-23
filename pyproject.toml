@@ -11,10 +11,10 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [
-    {name = "Ashutosh Mishra", email = "ashutoshm1771@gmail.com"},
+    {name = "Quantum Encoding Atlas Authors", email = "ashutoshm1771@gmail.com"},
 ]
 maintainers = [
-    {name = "Ashutosh Mishra", email = "ashutoshm1771@gmail.com"},
+    {name = "Quantum Encoding Atlas Authors", email = "ashutoshm1771@gmail.com"},
 ]
 keywords = [
     "quantum computing",

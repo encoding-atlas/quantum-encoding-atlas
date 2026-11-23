@@ -2,7 +2,7 @@
 
 ## Core Team
 
-- **Ashutosh Mishra** - *Project Lead* - [GitHub](https://github.com/ashutoshm1771)
+The Quantum Encoding Atlas is developed by the **Quantum Encoding Atlas Authors**.
 
 ## Contributors
 

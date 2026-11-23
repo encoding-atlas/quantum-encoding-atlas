@@ -58,6 +58,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
           force_orphan: false
-          user_name: "Ashutosh Mishra"
+          user_name: "Quantum Encoding Atlas Authors"
           user_email: "ashutoshm1771@gmail.com"
           commit_message: "docs: deploy from ${{ github.sha }}"
