@@ -7,7 +7,7 @@ in the encoding_atlas.analysis package. It includes:
 - **Partial Trace Computation**: Reduced density matrix calculations
 - **Quantum Fidelity**: State overlap computations
 - **Purity Calculation**: Density matrix purity measures
-- **Gradient Computation**: Parameter-shift rule implementation
+- **Input Gradients**: ∂⟨O⟩/∂xᵢ by fourth-order central differences
 - **Input Validation**: Encoding validation for analysis operations
 - **Random Sampling**: Reproducible random state generation
 
@@ -30,9 +30,15 @@ For a pure state, γ = 1. For a maximally mixed state of dimension d, γ = 1/d.
     For a bipartite system AB, the reduced density matrix of subsystem A is:
     ρ_A = Tr_B(ρ_AB)
 
-**Parameter-Shift Rule**:
-    For a parameterized gate U(θ) = exp(-iθG/2) where G² = I:
-    ∂⟨O⟩/∂θ = (⟨O⟩_{θ+π/2} - ⟨O⟩_{θ-π/2}) / 2
+**Input Gradients**:
+    ∂⟨O⟩/∂xᵢ ≈ [f(xᵢ−2h) − 8f(xᵢ−h) + 8f(xᵢ+h) − f(xᵢ+2h)] / (12h)
+
+    The two-term parameter-shift rule, ∂⟨O⟩/∂θ = (⟨O⟩_{θ+π/2} − ⟨O⟩_{θ−π/2})/2,
+    is exact only for a parameter entering a single gate exp(−iθG/2) with
+    G² = I. An input feature generally enters an encoding through several
+    gates, with scale factors and products, so it is not used for inputs.
+    Exact gradients with respect to *variational* parameters, which do enter
+    single rotations, live in :mod:`encoding_atlas.analysis._variational`.
 
 References
 ----------
@@ -1926,8 +1932,122 @@ def compute_von_neumann_entropy(
 
 
 # =============================================================================
-# Gradient Computation Functions
+# Input-Gradient Functions
 # =============================================================================
+#
+# These functions differentiate an observable of the *encoded state* with
+# respect to the *input features*, ∂⟨O⟩/∂xᵢ.
+#
+# There is no exact two-term parameter-shift rule for that derivative. The
+# rule ∂f/∂θ = (f(θ+π/2) − f(θ−π/2))/2 holds for a parameter that enters a
+# single gate exp(−iθG/2) with G² = I. A feature usually enters an encoding
+# through several gates, with scale factors (RZ(2xᵢ)) and products
+# ((π − xᵢ)(π − xⱼ)). Shifting the feature by π/2 then returns no
+# derivative at all: a frequency-2 dependence, for instance, cancels exactly.
+# Earlier releases applied that shift to every encoding.
+#
+# A fourth-order central finite difference is used instead,
+#
+#     f'(x) ≈ [f(x − 2h) − 8 f(x − h) + 8 f(x + h) − f(x + 2h)] / (12 h),
+#
+# whose truncation error is h⁴·f⁽⁵⁾/30 and whose round-off error is about
+# 1.5·ε_f/h for a simulation accurate to ε_f ≈ 10⁻¹⁶. The step is absolute,
+# not relative to |xᵢ|: features enter as rotation angles, whose frequencies
+# do not grow with the size of the angle. h = 10⁻⁴ balances the two errors
+# for the frequencies these encodings produce — against a sixth-order
+# Richardson reference it agrees to ~10⁻¹¹ on the IQP, ZZ and higher-order
+# angle maps, whose high-frequency content makes them the hardest case.
+
+# Absolute step of the central difference.
+_INPUT_FD_STEP: float = 1e-4
+
+# Stencil offsets (in units of h) and weights (divided by 12h).
+_INPUT_FD_OFFSETS: tuple[float, ...] = (-2.0, -1.0, 1.0, 2.0)
+_INPUT_FD_WEIGHTS: tuple[float, ...] = (1.0, -8.0, 8.0, -1.0)
+
+_INPUT_GRADIENT_OBSERVABLES: tuple[str, ...] = (
+    "computational",
+    "global_z",
+    "local_z",
+    "pauli_z",
+)
+
+
+def _validate_input_gradient_observable(observable: str) -> None:
+    """Validate ``observable`` and warn on the deprecated ``"pauli_z"`` alias.
+
+    Called once per public call, before any simulation is dispatched, so a
+    100-feature gradient does not emit 100 warnings.
+    """
+    if observable == "pauli_z":
+        warnings.warn(
+            'Observable "pauli_z" is deprecated. Use "global_z" for the '
+            'global Z⊗Z⊗...⊗Z observable, or "local_z" for Z on the first '
+            "qubit only. This will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    elif observable not in _INPUT_GRADIENT_OBSERVABLES:
+        raise ValueError(
+            f"Unknown observable: {observable!r}. "
+            f'Valid options are: "computational", "global_z", "local_z", "pauli_z".'
+        )
+
+
+def _input_gradient(
+    encoding: BaseEncoding,
+    x_array: NDArray[np.float64],
+    indices: Sequence[int],
+    observable: str,
+    backend: Literal["pennylane", "qiskit", "cirq"],
+) -> NDArray[np.float64]:
+    """Fourth-order central-difference ``∂⟨O⟩/∂xᵢ`` for each ``i`` in ``indices``.
+
+    Builds every shifted input up front and evaluates them in one batched
+    simulation. Each derivative depends only on its own four rows, so the
+    value for a feature is bit-identical whether it is requested alone or
+    together with others.
+    """
+    n_offsets = len(_INPUT_FD_OFFSETS)
+    shifted = np.repeat(x_array[np.newaxis, :], n_offsets * len(indices), axis=0)
+    steps = np.empty(len(indices), dtype=np.float64)
+    for k, i in enumerate(indices):
+        # Round the step to one exactly representable at x, so the
+        # differences below are taken over the step that was actually used.
+        h = float((x_array[i] + _INPUT_FD_STEP) - x_array[i])
+        steps[k] = h
+        for j, offset in enumerate(_INPUT_FD_OFFSETS):
+            shifted[n_offsets * k + j, i] = x_array[i] + offset * h
+
+    states = simulate_encoding_statevectors_batch(encoding, shifted, backend=backend)
+    expectations = _expectations_batch(
+        states,
+        cast("Literal['computational', 'global_z', 'local_z', 'pauli_z']", observable),
+        int(encoding.n_qubits),
+    ).reshape(len(indices), n_offsets)
+
+    weights = np.asarray(_INPUT_FD_WEIGHTS, dtype=np.float64)
+    with np.errstate(invalid="ignore"):
+        gradients: NDArray[np.float64] = np.asarray(
+            (expectations @ weights) / (12.0 * steps), dtype=np.float64
+        )
+
+    # Numerical safety: a backend that silently emits NaN amplitudes must
+    # surface as an error, not as a gradient.
+    if not np.all(np.isfinite(gradients)):
+        bad = int(np.argmax(~np.isfinite(gradients)))
+        raise NumericalInstabilityError(
+            f"Gradient computation produced invalid value: {gradients[bad]}",
+            value=float(gradients[bad]),
+            operation="input_finite_difference",
+            details={
+                "param_index": int(indices[bad]),
+                "step": float(steps[bad]),
+                "expectations": expectations[bad].tolist(),
+            },
+        )
+
+    return gradients
 
 
 def compute_parameter_gradient(
@@ -1939,14 +2059,19 @@ def compute_parameter_gradient(
     ] = "computational",
     backend: Literal["pennylane", "qiskit", "cirq"] = "pennylane",
 ) -> float:
-    """Compute gradient of expectation value with respect to one parameter.
+    """Compute ``∂⟨O⟩/∂xᵢ``, the derivative with respect to one input feature.
 
-    Uses the parameter-shift rule for quantum gradients:
+    Uses the fourth-order central difference
 
-        ∂⟨O⟩/∂θ = (⟨O⟩_{θ+π/2} - ⟨O⟩_{θ-π/2}) / 2
+        ∂⟨O⟩/∂xᵢ ≈ [f(xᵢ − 2h) − 8 f(xᵢ − h) + 8 f(xᵢ + h) − f(xᵢ + 2h)] / (12h)
 
-    This is exact for gates of the form U(θ) = exp(-iθG/2) where G² = I,
-    which includes all standard rotation gates (RX, RY, RZ).
+    with ``h = 10⁻⁴``, accurate to about ``10⁻¹⁰`` for encodings that are
+    smooth in their inputs. Four statevector simulations are needed.
+
+    The parameter-shift rule is deliberately *not* used: it is exact only for
+    a parameter entering a single ``exp(−iθG/2)`` gate with ``G² = I``, while
+    an input feature generally enters several gates, with scale factors and
+    products. See the section comment above.
 
     Parameters
     ----------
@@ -1955,7 +2080,7 @@ def compute_parameter_gradient(
     x : NDArray[np.floating]
         Input data vector.
     param_index : int
-        Index of the parameter to differentiate with respect to.
+        Index of the input feature to differentiate with respect to.
     observable : {"computational", "global_z", "local_z", "pauli_z"}, default="computational"
         Observable to measure:
 
@@ -1974,7 +2099,7 @@ def compute_parameter_gradient(
     Returns
     -------
     float
-        Gradient of the expectation value.
+        ``∂⟨O⟩/∂xᵢ`` at ``x``.
 
     Raises
     ------
@@ -1982,6 +2107,8 @@ def compute_parameter_gradient(
         If param_index is out of range.
     ValueError
         If observable is not a recognized option.
+    NumericalInstabilityError
+        If the simulation produces non-finite expectation values.
 
     Examples
     --------
@@ -1991,12 +2118,15 @@ def compute_parameter_gradient(
     >>> enc = AngleEncoding(n_features=2)
     >>> x = np.array([0.5, 1.0])
     >>> grad = compute_parameter_gradient(enc, x, param_index=0)
-    >>> print(f"Gradient: {grad:.6f}")
+    >>> bool(np.isclose(grad, -0.5 * np.sin(0.5) * np.cos(0.5) ** 2))
+    True
 
     Notes
     -----
-    The parameter-shift rule requires two circuit evaluations per gradient
-    component. For full gradient vectors, use :func:`compute_all_parameter_gradients`.
+    For encodings that are not differentiable in their inputs — the
+    thresholds of :class:`~encoding_atlas.BasisEncoding` — the derivative is
+    zero almost everywhere and undefined at a threshold; the estimate is
+    zero unless ``xᵢ`` lies within ``2h`` of one.
 
     **Observable Semantics**
 
@@ -2020,49 +2150,12 @@ def compute_parameter_gradient(
             f"param_index {param_index} out of range [0, {len(x_array) - 1}]"
         )
 
-    # Validate observable upfront so the error is raised before any
-    # circuit simulation is dispatched. Routing the deprecation warning
-    # here (rather than from inside the per-call expectation logic) keeps
-    # the hot-path branch below allocation-free.
-    if observable == "pauli_z":
-        warnings.warn(
-            'Observable "pauli_z" is deprecated. Use "global_z" for the '
-            'global Z⊗Z⊗...⊗Z observable, or "local_z" for Z on the first '
-            "qubit only. This will be removed in a future version.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    elif observable not in ("computational", "global_z", "local_z"):
-        raise ValueError(
-            f"Unknown observable: {observable!r}. "
-            f'Valid options are: "computational", "global_z", "local_z", "pauli_z".'
-        )
+    # Validate the observable before any circuit simulation is dispatched.
+    _validate_input_gradient_observable(observable)
 
-    # Parameter shift value (π/2 for standard rotation gates).
-    shift = np.pi / 2.0
-
-    # Forward and backward shifts share the unmodified base vector, so
-    # only one allocation per direction is needed.
-    x_plus = x_array.copy()
-    x_plus[param_index] += shift
-    x_minus = x_array.copy()
-    x_minus[param_index] -= shift
-
-    state_plus = simulate_encoding_statevector(encoding, x_plus, backend)
-    state_minus = simulate_encoding_statevector(encoding, x_minus, backend)
-
-    # Stack the two statevectors and dispatch through the batched
-    # observable evaluator. This consolidates the per-observable
-    # arithmetic into a single, fully vectorised path shared with
-    # ``compute_all_parameter_gradients`` and the trainability inner
-    # loop, eliminating the previous per-call list-comprehension that
-    # rebuilt the global-Z eigenvalue array on every invocation.
-    n_qubits = int(np.log2(len(state_plus)))
-    states_pair = np.stack((np.asarray(state_plus), np.asarray(state_minus)), axis=0)
-    expectations = _expectations_batch(states_pair, observable, n_qubits)
-    gradient = float(expectations[0] - expectations[1]) / 2.0
-
-    return gradient
+    return float(
+        _input_gradient(encoding, x_array, [param_index], observable, backend)[0]
+    )
 
 
 def _compute_local_z_expectation(
@@ -2126,21 +2219,14 @@ def compute_all_parameter_gradients(
     ] = "computational",
     backend: Literal["pennylane", "qiskit", "cirq"] = "pennylane",
 ) -> FloatArray:
-    """Compute gradients for all parameters using the parameter-shift rule.
+    """Compute ``∂⟨O⟩/∂xᵢ`` for every input feature.
 
-    Builds the full ``(2 * n_params, n_features)`` matrix of shifted
-    parameter vectors, dispatches a single
-    :func:`simulate_encoding_statevectors_batch` call, and evaluates all
-    expectation values with one vectorised observable computation.
-
-    Compared to the previous implementation — a Python ``for`` loop over
-    parameters, each calling :func:`compute_parameter_gradient` and
-    therefore each invoking the backend simulator twice independently —
-    this version still performs the same ``2 * n_params`` statevector
-    simulations (the parameter-shift rule fundamentally requires them)
-    but amortises the Python and observable-evaluation overhead into a
-    single pass. The numerical result is **identical** to the per-call
-    version (verified by ``test_batched_matches_per_call_gradient``).
+    Builds all ``4 * n_features`` shifted inputs of the fourth-order central
+    difference used by :func:`compute_parameter_gradient`, dispatches one
+    :func:`simulate_encoding_statevectors_batch` call, and evaluates every
+    expectation value in one vectorised pass. Each component is
+    bit-identical to the corresponding :func:`compute_parameter_gradient`
+    call.
 
     Parameters
     ----------
@@ -2169,6 +2255,8 @@ def compute_all_parameter_gradients(
         If ``observable`` is not one of the recognised options.
     SimulationError
         If the underlying batched simulation fails.
+    NumericalInstabilityError
+        If the simulation produces non-finite expectation values.
 
     Examples
     --------
@@ -2186,22 +2274,8 @@ def compute_all_parameter_gradients(
         raise ValidationError(f"Input x must be 1D array, got shape {x_array.shape}")
     n_params = int(x_array.shape[0])
 
-    # Validate the observable up front. The deprecation warning for
-    # ``"pauli_z"`` is emitted once here, not once per shifted-parameter
-    # pair, so a 100-parameter encoding does not produce 100 warnings.
-    if observable == "pauli_z":
-        warnings.warn(
-            'Observable "pauli_z" is deprecated. Use "global_z" for the '
-            'global Z⊗Z⊗...⊗Z observable, or "local_z" for Z on the first '
-            "qubit only. This will be removed in a future version.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    elif observable not in ("computational", "global_z", "local_z"):
-        raise ValueError(
-            f"Unknown observable: {observable!r}. "
-            f'Valid options are: "computational", "global_z", "local_z", "pauli_z".'
-        )
+    # Validate the observable up front, before any simulation.
+    _validate_input_gradient_observable(observable)
 
     # Degenerate input — no parameters, no gradient. Return an empty
     # array of the correct dtype rather than dispatching an empty batch
@@ -2209,55 +2283,7 @@ def compute_all_parameter_gradients(
     if n_params == 0:
         return np.zeros(0, dtype=np.float64)
 
-    shift = np.pi / 2.0
-
-    # Build the ``(2 * n_params, n_features)`` shifted-parameter matrix.
-    # Rows are interleaved so that ``[2k]`` carries the +shift on
-    # parameter k and ``[2k+1]`` carries the -shift; the parameter-shift
-    # formula then reduces to a simple paired difference at the end.
-    shifted = np.broadcast_to(x_array, (2 * n_params, n_params)).copy()
-    rows = np.arange(2 * n_params)
-    params = rows >> 1  # integer divide by 2
-    signs = np.where(rows & 1 == 0, shift, -shift)
-    shifted[rows, params] += signs
-
-    # Single dispatch through the batched simulator. For backends with
-    # a true batch implementation this collapses 2 * n_params separate
-    # backend calls into one; for the row-by-row default it still
-    # eliminates the per-parameter Python overhead.
-    states = simulate_encoding_statevectors_batch(encoding, shifted, backend=backend)
-
-    # All shifted states share the same dimension, derived from the
-    # encoding's qubit count — fetch it from ``encoding`` rather than
-    # ``log2(states.shape[1])`` to avoid the small float round-trip.
-    n_qubits = int(encoding.n_qubits)
-    expectations = _expectations_batch(states, observable, n_qubits)
-
-    # Parameter-shift formula: ``∂⟨O⟩/∂θᵢ = (⟨O⟩₊ - ⟨O⟩₋) / 2``.
-    # NumPy emits a benign RuntimeWarning for ``inf - inf`` or
-    # ``-inf - -inf``; we detect and re-raise as
-    # ``NumericalInstabilityError`` below, so suppress the warning.
-    with np.errstate(invalid="ignore"):
-        gradients = (expectations[::2] - expectations[1::2]) / 2.0
-
-    # Numerical safety: per-parameter raise on NaN/Inf so the failure
-    # surface matches the per-call function (which propagates the same
-    # error from the simulator). This catches a corner case where a
-    # backend silently emits NaN amplitudes without raising.
-    if not np.all(np.isfinite(gradients)):
-        bad = int(np.argmax(~np.isfinite(gradients)))
-        raise NumericalInstabilityError(
-            f"Gradient computation produced invalid value: {gradients[bad]}",
-            value=float(gradients[bad]),
-            operation="parameter_shift_batched",
-            details={
-                "param_index": bad,
-                "exp_plus": float(expectations[2 * bad]),
-                "exp_minus": float(expectations[2 * bad + 1]),
-            },
-        )
-
-    return gradients.astype(np.float64, copy=False)
+    return _input_gradient(encoding, x_array, range(n_params), observable, backend)
 
 
 # =============================================================================

@@ -1,65 +1,87 @@
 """Trainability analysis for quantum encodings.
 
-This module implements trainability estimation based on gradient variance
-analysis, as described in McClean et al. (2018) on barren plateaus. It
-provides tools to assess how easy it is to optimize parameters in a
-variational quantum circuit.
+This module estimates how trainable a variational model built on an encoding
+is, through the variance of its cost gradient at random initialisation — the
+quantity whose exponential decay with qubit count defines a barren plateau
+(McClean et al. 2018; Cerezo et al. 2021).
 
-Mathematical Background
------------------------
-Trainability of variational quantum circuits is limited by "barren plateaus"
-- regions of parameter space where gradients vanish exponentially with
-system size. This module estimates trainability by:
+What is measured
+----------------
+An encoding ``U(x)`` has no trainable parameters of its own to differentiate:
+its angles are the data. Trainability is a property of the *model* trained on
+top of it, so the encoding is measured inside the model the atlas benchmarks —
+the variational classifier of :class:`encoding_atlas.benchmark.VQCClassifier`:
 
-1. Computing parameter gradients at random initialization points
-2. Measuring the variance of these gradients
-3. Comparing to expected scaling for trainable vs. untrainable circuits
+.. math::
 
-A circuit is considered trainable if gradient variance does not decay
-exponentially with qubit count.
+    C(x, \\theta) = \\langle 0 |\\, U(x)^\\dagger W(\\theta)^\\dagger \\, O \\,
+                    W(\\theta) U(x) \\,| 0 \\rangle,
 
-**Gradient Variance Scaling:**
+where ``W(θ)`` is ``n_var_layers`` layers of ``RY(θ[l, q])`` on every qubit
+followed by a linear CNOT chain, and ``O`` is the read-out observable
+(``Z`` on qubit 0 by default, the classifier's own read-out). The estimator
+draws ``x`` uniformly from ``input_range`` and ``θ`` uniformly from
+``[-π, π)`` — the classifier's initialisation — and reports
 
-For a parameterized circuit U(θ), the variance of ∂⟨O⟩/∂θᵢ across random
-initializations indicates trainability:
+.. math::
 
-- Barren plateau (untrainable): Var[∂⟨O⟩/∂θᵢ] ∝ 1/2ⁿ (exponential decay)
-- Trainable: Var[∂⟨O⟩/∂θᵢ] ∝ const (no decay with system size)
+    \\mathrm{Var}\\left[\\partial C / \\partial \\theta_k\\right]
+    \\quad\\text{averaged over the live parameters } k.
 
-**Cost Function Landscape:**
+Each ``θ_k`` enters exactly one ``RY`` gate, so the gradient is exact; it is
+computed by the adjoint method in :mod:`encoding_atlas.analysis._variational`
+and agrees with PennyLane's automatic differentiation of the classifier's
+circuit to floating-point precision.
 
-We analyze the cost function landscape by:
-1. Computing gradients at random parameter points using parameter-shift rule
-2. Measuring the variance of these gradients
-3. Checking for exponential decay with system size
+*Live* parameters are those inside the read-out's backward light cone; the
+others have ``∂C/∂θ_k ≡ 0`` for every input. With the default ``Z₀`` read-out,
+``θ[l, q]`` is live exactly when ``q ≤ n_var_layers - 1 - l`` — three
+parameters for the benchmark's two layers, at any width. Averaging over all
+``n_var_layers · n`` parameters instead would dilute the variance by
+``3 / (2n)``: a decay with width that comes from the read-out, not the
+encoding, and would read as a barren plateau. A corollary worth knowing: the
+classifier's output, and so this estimate, depends on the encoded state only
+through its first ``n_var_layers`` qubits.
 
-**Observable Types:**
+This is the barren-plateau quantity of the literature, evaluated with the data
+distribution averaged in. A data-dependent average matters: an encoding can
+itself concentrate the states it produces, and a concentrated input state
+flattens the landscape of any model trained on top of it.
 
-The choice of observable affects barren plateau detection:
-- Local observables (single-qubit): Less prone to barren plateaus
-- Global observables (many-qubit): More prone to barren plateaus
+.. note::
 
-This module uses local observables by default for more reliable detection.
+   Earlier releases differentiated the *data* ``x`` with a ``±π/2`` shift.
+   That shift is exact only for a feature that enters a single unit-frequency
+   rotation (plain angle encoding); for the other encodings it did not return
+   a derivative at all, and a derivative with respect to data measures input
+   sensitivity rather than trainability. See the changelog.
+
+Observables
+-----------
+- ``"pauli_z"`` (default): ``Z`` on qubit 0. Local, and the benchmark
+  classifier's read-out.
+- ``"global_z"``: ``Z⊗Z⊗…⊗Z``. Global.
+- ``"computational"``: the projector ``|0…0⟩⟨0…0|``. Global — its support is
+  every qubit — so it exhibits cost-function-induced barren plateaus even for
+  shallow circuits (Cerezo et al. 2021).
 
 References
 ----------
-.. [1] McClean, J. R., et al. (2018).
-       "Barren plateaus in quantum neural network training landscapes."
-       Nature Communications, 9(1), 4812.
+.. [1] McClean, J. R., Boixo, S., Smelyanskiy, V. N., Babbush, R., & Neven, H.
+       (2018). "Barren plateaus in quantum neural network training
+       landscapes." Nature Communications, 9(1), 4812.
 
-.. [2] Cerezo, M., et al. (2021).
+.. [2] Cerezo, M., Sone, A., Volkoff, T., Cincio, L., & Coles, P. J. (2021).
        "Cost function dependent barren plateaus in shallow parametrized
-       quantum circuits."
-       Nature Communications, 12(1), 1791.
+       quantum circuits." Nature Communications, 12(1), 1791.
 
-.. [3] Larocca, M., et al. (2022).
-       "Diagnosing Barren Plateaus with Tools from Quantum Optimal Control."
-       Quantum, 6, 824.
+.. [3] Holmes, Z., Sharma, K., Cerezo, M., & Coles, P. J. (2022).
+       "Connecting ansatz expressibility to gradient magnitudes and barren
+       plateaus." PRX Quantum, 3(1), 010313.
 
-.. [4] Schuld, M., et al. (2019).
-       "Evaluating analytic gradients on quantum hardware."
-       Physical Review A, 99(3), 032331.
-       (Parameter-shift rule for gradient computation)
+.. [4] Jones, T., & Gacon, J. (2020). "Efficient calculation of gradients in
+       classical simulations of variational quantum algorithms."
+       arXiv:2009.02823.
 
 Examples
 --------
@@ -68,55 +90,33 @@ Basic trainability estimation:
 >>> from encoding_atlas import AngleEncoding, IQPEncoding
 >>> from encoding_atlas.analysis import estimate_trainability
 >>>
->>> # Non-entangling encoding (typically high trainability)
->>> enc_simple = AngleEncoding(n_features=4)
->>> train_simple = estimate_trainability(enc_simple, n_samples=100, seed=42)
->>> print(f"Simple encoding trainability: {train_simple:.4f}")
->>>
->>> # Entangling encoding (may have lower trainability)
->>> enc_complex = IQPEncoding(n_features=4, reps=2)
->>> train_complex = estimate_trainability(enc_complex, n_samples=100, seed=42)
->>> print(f"Complex encoding trainability: {train_complex:.4f}")
+>>> angle = estimate_trainability(AngleEncoding(n_features=4), n_samples=100, seed=42)
+>>> iqp = estimate_trainability(IQPEncoding(n_features=4, reps=2), n_samples=100, seed=42)
+>>> print(f"angle: {angle:.3f}  iqp: {iqp:.3f}")  # doctest: +SKIP
 
 Detailed analysis with barren plateau risk:
 
 >>> result = estimate_trainability(
-...     enc_complex,
+...     IQPEncoding(n_features=4, reps=2),
 ...     n_samples=200,
 ...     seed=42,
-...     return_details=True
+...     return_details=True,
 ... )
->>> print(f"Trainability: {result['trainability_estimate']:.4f}")
->>> print(f"Gradient variance: {result['gradient_variance']:.2e}")
->>> print(f"Barren plateau risk: {result['barren_plateau_risk']}")
-
-Comparing shallow vs deep circuits:
-
->>> from encoding_atlas import DataReuploading
->>> shallow = DataReuploading(n_features=4, n_layers=1)
->>> deep = DataReuploading(n_features=4, n_layers=5)
->>> print(f"Shallow: {estimate_trainability(shallow, seed=42):.4f}")
->>> print(f"Deep: {estimate_trainability(deep, seed=42):.4f}")
+>>> print(f"Gradient variance: {result['gradient_variance']:.2e}")  # doctest: +SKIP
+>>> print(f"Barren plateau risk: {result['barren_plateau_risk']}")  # doctest: +SKIP
 
 Notes
 -----
-The trainability score should be interpreted as a relative measure for
-comparing encodings, not an absolute guarantee of training success.
-Actual training performance depends on many factors including:
-
-- Optimizer choice and learning rate
-- Cost function structure
-- Hardware noise characteristics
-- Initial parameter values
-
-For production use, consider running multiple seeds and averaging results
-for more reliable estimates.
+The trainability score is a relative measure for comparing encodings, not a
+guarantee of training success. Optimiser, learning rate, cost function and
+noise all matter as well.
 
 See Also
 --------
 compute_expressibility : Measure Hilbert space coverage.
 compute_entanglement_capability : Measure entanglement generation.
 count_resources : Count computational resources.
+encoding_atlas.benchmark.VQCClassifier : The model whose gradients are measured.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ from typing import Any, Literal, TypedDict, cast, overload
 import numpy as np
 from numpy.typing import NDArray
 
-from encoding_atlas.analysis._ci import percentile_bootstrap_ci, validate_ci_args
+from encoding_atlas.analysis._ci import validate_ci_args
 from encoding_atlas.analysis._parallel import ParallelArg, resolve_parallel_mode
 from encoding_atlas.analysis._sampling import (
     SamplingMethod,
@@ -137,12 +137,15 @@ from encoding_atlas.analysis._sampling import (
     validate_sampling,
 )
 from encoding_atlas.analysis._utils import (
-    _expectations_batch,
-    _local_z_expectation_from_state,
     create_rng,
     simulate_encoding_statevector,
-    simulate_encoding_statevectors_batch,
     validate_encoding_for_analysis,
+)
+from encoding_atlas.analysis._variational import (
+    VARIATIONAL_OBSERVABLES,
+    live_parameter_mask,
+    variational_gradient,
+    variational_parameter_count,
 )
 from encoding_atlas.core.base import BaseEncoding
 from encoding_atlas.core.exceptions import (
@@ -172,50 +175,36 @@ __all__ = [
 # Module-Level Constants
 # =============================================================================
 
-# Default number of random parameter samples for gradient variance estimation.
+# Default number of random (x, θ) samples for gradient-variance estimation.
 #
-# RATIONALE: Trainability uses the FEWEST samples (500) compared to other
-# analysis metrics (expressibility: 5000, entanglement: 1000) because:
-#
-# 1. COMPUTATIONAL COST: Each sample requires computing gradients using the
-#    parameter-shift rule. For n_features parameters, this means 2*n_features
-#    circuit simulations per sample. This is significantly more expensive than
-#    expressibility (2 simulations/sample) or entanglement (1 simulation/sample).
-#
-# 2. VARIANCE ESTIMATION: We're estimating Var(∂⟨O⟩/∂θ), which converges
-#    relatively quickly. Variance estimators have standard error ≈ σ²/√(n-1),
-#    so 500 samples gives SE ≈ σ²/22, which is sufficient for barren plateau
-#    detection (orders of magnitude matter, not decimal precision).
-#
-# 3. BARREN PLATEAU DETECTION: The goal is to distinguish trainable circuits
-#    (variance > 10⁻³) from untrainable ones (variance < 10⁻⁶). This 3-order-
-#    of-magnitude gap is easily detectable even with moderate sample counts.
-#
-# 4. LITERATURE STANDARD: Barren plateau studies typically use 100-1000
-#    parameter samples (McClean et al., 2018; Cerezo et al., 2021).
-#
-# For a 4-feature encoding, 500 samples = 500 * 2 * 4 = 4000 circuit evaluations,
-# which is comparable to expressibility's 5000 * 2 = 10000 evaluations.
+# Each sample costs one encoding simulation plus one adjoint sweep through the
+# variational read-out (O(n_var_layers · n_qubits) gate applications on 2ⁿ
+# amplitudes), so the sample count — not the parameter count — sets the cost.
+# The standard error of a variance estimate is ≈ σ²·√(2/(n-1)), so 500
+# samples resolve the variance to ~6%, ample for barren-plateau detection
+# where orders of magnitude matter. Barren-plateau studies typically use
+# 100-1000 samples (McClean et al., 2018; Cerezo et al., 2021).
 _DEFAULT_N_SAMPLES: int = 500
 
-# Warning threshold for sample count.
-#
-# RATIONALE: 50 samples is the minimum for reasonable variance estimation.
-# This is LOWER than expressibility/entanglement (100) because:
-# 1. Each trainability sample is more expensive, so users may need fewer
-# 2. Variance estimation needs fewer samples than histogram estimation
-# 3. We only need order-of-magnitude accuracy for barren plateau detection
+# Warning threshold for sample count. 50 samples resolves a variance to ~20%,
+# the minimum for a meaningful order-of-magnitude estimate.
 _MIN_SAMPLES_WARNING: int = 50
 
-# Error threshold for sample count.
-# Below this value, we refuse to compute as variance estimates would be
-# statistically meaningless and numerically unstable.
+# Error threshold for sample count. Below this, the variance estimate is
+# statistically meaningless.
 _MIN_SAMPLES_ERROR: int = 10
 
-# Default parameter sampling range.
-# Parameters are sampled uniformly from [0, 2π], which covers the full
-# rotation range for standard quantum gates (RX, RY, RZ).
+# Default data sampling range: a full rotation period, which is also the
+# empirical pipeline's feature scaling.
 _DEFAULT_INPUT_RANGE: tuple[float, float] = (0.0, 2.0 * np.pi)
+
+# Default number of variational layers in the read-out. Matches
+# ``VQCClassifier(n_var_layers=2)`` and the benchmark's Stage 6a configuration.
+_DEFAULT_N_VAR_LAYERS: int = 2
+
+# Variational angles are drawn from the classifier's own initialisation,
+# ``rng.uniform(-π, π)`` (see ``VQCClassifier.fit``).
+_THETA_RANGE: tuple[float, float] = (-np.pi, np.pi)
 
 # Barren plateau detection thresholds.
 # These thresholds are calibrated based on literature values and empirical
@@ -232,25 +221,20 @@ _BP_MEDIUM_RISK_THRESHOLD: float = 1e-3
 # Reference variance for trainability scoring.
 #
 # MATHEMATICAL JUSTIFICATION:
-# For a single-qubit rotation gate Rᵧ(θ) with parameter θ uniform over [0, 2π],
-# the expectation value of Z is ⟨Z⟩ = cos(θ). Using the parameter-shift rule:
+# On one qubit, angle encoding ``RY(x)`` followed by the read-out
+# ``RY(θ₁)…RY(θ_L)`` gives ``C = ⟨Z⟩ = cos(x + Σθ)``, so
+# ``∂C/∂θ_k = -sin(x + Σθ)``. With θ uniform over a full period the argument
+# is uniform too, and
 #
-#     ∂⟨Z⟩/∂θ = (⟨Z⟩_{θ+π/2} - ⟨Z⟩_{θ-π/2}) / 2 = -sin(θ)
+#     Var[sin(φ)] = E[sin²(φ)] - E[sin(φ)]² = 1/2 - 0 = 0.5
 #
-# The variance of -sin(θ) for θ ~ Uniform[0, 2π] is:
-#
-#     Var[sin(θ)] = E[sin²(θ)] - E[sin(θ)]² = 1/2 - 0 = 0.5
-#
-# For multi-parameter circuits, gradients typically have lower variance due to:
-# 1. Parameter interference effects reducing individual contributions
-# 2. Entanglement distributing information across parameters
-# 3. Observable locality (local observables see partial circuit effects)
+# Multi-qubit circuits have lower variance: the CNOT chain spreads each
+# parameter's influence over qubits a local read-out does not see.
 #
 # The value 0.1 is chosen as a conservative reference because:
-# - It's below the single-parameter maximum (~0.5)
+# - It's below the single-parameter maximum (0.5)
 # - It's representative of shallow, structured circuits (2-4 qubits, 1-2 layers)
 # - It's well above the barren plateau regime (< 10⁻³)
-# - It aligns with empirical observations in QML benchmarks (Cerezo et al., 2021)
 #
 # The trainability score sigmoid maps variance relative to this reference:
 # - variance >> 0.1 → trainability → 1 (highly trainable)
@@ -277,6 +261,10 @@ _DEFAULT_N_BOOTSTRAP_CI: int = 200
 # Default two-sided confidence level for reported CIs.
 _DEFAULT_CONFIDENCE_LEVEL: float = 0.95
 
+_VALID_BACKENDS: frozenset[str] = frozenset({"pennylane", "qiskit", "cirq"})
+
+TrainabilityObservable = Literal["pauli_z", "global_z", "computational"]
+
 
 # =============================================================================
 # Type Definitions
@@ -296,9 +284,10 @@ class TrainabilityResult(TypedDict):
         indicate better trainability. This score is derived from the gradient
         variance using a logistic transformation.
     gradient_variance : float
-        Average variance of parameter gradients computed over successful
-        samples only. This is the primary metric for barren plateau detection.
-        Values near zero indicate a barren plateau.
+        ``Var[∂C/∂θ_k]`` averaged over the live variational parameters (see
+        ``live_parameter_mask``), computed over successful samples only. This
+        is the primary metric for barren plateau detection. Values near zero
+        indicate a barren plateau.
     barren_plateau_risk : {"low", "medium", "high"}
         Categorical assessment of barren plateau risk based on gradient
         variance and circuit size:
@@ -315,15 +304,16 @@ class TrainabilityResult(TypedDict):
         in barren plateau literature; it is provided for diagnostic purposes.
         For rigorous analysis, examine ``per_parameter_variance`` directly.
     n_samples : int
-        Total number of random parameter samples requested for the estimate.
+        Total number of random ``(x, θ)`` samples requested for the estimate.
     n_successful_samples : int
         Number of samples where gradient computation succeeded. This is the
         actual sample size used for variance computation. Equal to
         ``n_samples - n_failed_samples``.
     per_parameter_variance : NDArray[np.floating]
-        Array of variance values for each individual parameter, computed
-        over successful samples only. This can reveal if specific parameters
-        are more trainable than others.
+        Variance of each variational parameter's gradient, shape
+        ``(n_var_layers * n_qubits,)``. Entry ``l * n_qubits + q`` belongs to
+        ``θ[l, q]`` — the ``RY`` on qubit ``q`` in layer ``l``. Entries
+        outside ``live_parameter_mask`` are zero up to round-off.
     n_failed_samples : int
         Number of samples where gradient computation failed. High values
         may indicate issues with the encoding or simulation backend.
@@ -344,8 +334,19 @@ class TrainabilityResult(TypedDict):
         Two-sided confidence level used for the CI bounds above
         (default 0.95 → 95% CIs).
     sampling : {'uniform', 'sobol'}
-        Sampling strategy that produced the per-sample inputs. See
+        Sampling strategy that produced the per-sample ``(x, θ)`` draws. See
         :func:`estimate_trainability` for details.
+    n_var_layers : int
+        Number of variational layers in the read-out that was differentiated.
+    observable : {"pauli_z", "global_z", "computational"}
+        Read-out observable whose gradient was measured.
+    n_live_parameters : int
+        Number of parameters inside the read-out's light cone, over which
+        ``gradient_variance`` is averaged.
+    live_parameter_mask : NDArray[np.bool_]
+        Shape ``(n_var_layers * n_qubits,)``; ``True`` where the gradient is
+        not identically zero. Depends on the read-out only, never on the
+        encoding.
     """
 
     trainability_estimate: float
@@ -362,6 +363,10 @@ class TrainabilityResult(TypedDict):
     gradient_variance_ci_upper: float
     confidence_level: float
     sampling: str
+    n_var_layers: int
+    observable: str
+    n_live_parameters: int
+    live_parameter_mask: NDArray[np.bool_]
 
 
 # =============================================================================
@@ -392,8 +397,9 @@ def _trainability_worker_init(
 
 def _trainability_worker_compute(
     x: NDArray[np.floating[Any]],
+    theta: NDArray[np.floating[Any]],
 ) -> tuple[NDArray[np.floating[Any]] | None, str | None]:
-    """Worker entrypoint: compute gradients for one sample input.
+    """Worker entrypoint: compute gradients for one ``(x, θ)`` sample.
 
     Returns ``(gradients, None)`` on success or ``(None, error_message)``
     on a tolerated failure (``SimulationError`` /
@@ -410,6 +416,7 @@ def _trainability_worker_compute(
     return _compute_one_gradient_sample(
         _TRAIN_WORKER_ENCODING,
         x,
+        theta,
         _TRAIN_WORKER_BACKEND,
         _TRAIN_WORKER_OBSERVABLE,
     )
@@ -418,10 +425,16 @@ def _trainability_worker_compute(
 def _compute_one_gradient_sample(
     encoding: BaseEncoding,
     x: NDArray[np.floating[Any]],
+    theta: NDArray[np.floating[Any]],
     backend: str,
     observable: str,
 ) -> tuple[NDArray[np.floating[Any]] | None, str | None]:
-    """Compute gradients for one sample, tolerating expected failures.
+    """Compute ``∂C/∂θ`` for one sample, tolerating expected failures.
+
+    The encoded state ``U(x)|0⟩`` is simulated on ``backend``; the
+    variational read-out and its exact gradient are then evaluated in NumPy.
+    Every parallel mode calls this same function once per sample, which is
+    what keeps their outputs bit-identical.
 
     Returns
     -------
@@ -430,17 +443,32 @@ def _compute_one_gradient_sample(
     responsible for counting failures and bumping the appropriate logger.
     """
     try:
-        gradients = _compute_encoding_gradients(
-            encoding=encoding,
-            x=x,
-            observable=observable,
-            backend=backend,
+        state = simulate_encoding_statevector(
+            encoding,
+            x,
+            backend=cast("Literal['pennylane', 'qiskit', 'cirq']", backend),
+        )
+        gradients = variational_gradient(
+            state, theta, cast("TrainabilityObservable", observable)
         )
         return gradients, None
     except (SimulationError, NumericalInstabilityError) as e:
         return None, f"expected:{type(e).__name__}:{e}"
     except Exception as e:  # noqa: BLE001 - matches sequential tolerance
         return None, f"unexpected:{type(e).__name__}:{e}"
+
+
+def _validate_n_var_layers(n_var_layers: object) -> int:
+    """Return ``n_var_layers`` as an int, or raise ``ValueError``."""
+    if (
+        isinstance(n_var_layers, bool)
+        or not isinstance(n_var_layers, (int, np.integer))
+        or int(n_var_layers) < 1
+    ):
+        raise ValueError(
+            f"n_var_layers must be a positive integer, got {n_var_layers!r}."
+        )
+    return int(n_var_layers)
 
 
 # =============================================================================
@@ -453,7 +481,7 @@ def estimate_trainability(
     encoding: BaseEncoding,
     n_samples: int = ...,
     input_range: tuple[float, float] = ...,
-    observable: Literal["computational", "pauli_z", "global_z"] = ...,
+    observable: TrainabilityObservable = ...,
     seed: int | None = ...,
     backend: Literal["pennylane", "qiskit", "cirq"] = ...,
     return_details: Literal[False] = ...,
@@ -463,6 +491,7 @@ def estimate_trainability(
     sampling: SamplingMethod = ...,
     confidence_level: float = ...,
     n_bootstrap_ci: int = ...,
+    n_var_layers: int = ...,
 ) -> float: ...
 
 
@@ -471,7 +500,7 @@ def estimate_trainability(
     encoding: BaseEncoding,
     n_samples: int = ...,
     input_range: tuple[float, float] = ...,
-    observable: Literal["computational", "pauli_z", "global_z"] = ...,
+    observable: TrainabilityObservable = ...,
     seed: int | None = ...,
     backend: Literal["pennylane", "qiskit", "cirq"] = ...,
     return_details: Literal[True] = ...,
@@ -481,6 +510,7 @@ def estimate_trainability(
     sampling: SamplingMethod = ...,
     confidence_level: float = ...,
     n_bootstrap_ci: int = ...,
+    n_var_layers: int = ...,
 ) -> TrainabilityResult: ...
 
 
@@ -488,7 +518,7 @@ def estimate_trainability(
     encoding: BaseEncoding,
     n_samples: int = _DEFAULT_N_SAMPLES,
     input_range: tuple[float, float] = _DEFAULT_INPUT_RANGE,
-    observable: Literal["computational", "pauli_z", "global_z"] = "computational",
+    observable: TrainabilityObservable = "pauli_z",
     seed: int | None = None,
     backend: Literal["pennylane", "qiskit", "cirq"] = "pennylane",
     return_details: bool = False,
@@ -498,17 +528,16 @@ def estimate_trainability(
     sampling: SamplingMethod = "uniform",
     confidence_level: float = _DEFAULT_CONFIDENCE_LEVEL,
     n_bootstrap_ci: int = _DEFAULT_N_BOOTSTRAP_CI,
+    n_var_layers: int = _DEFAULT_N_VAR_LAYERS,
 ) -> float | TrainabilityResult:
-    """Estimate the trainability of a quantum encoding.
+    """Estimate the trainability of a variational model built on an encoding.
 
-    Trainability is estimated by analyzing the variance of gradients
-    with respect to encoding parameters. Low variance (especially
-    exponentially decaying with system size) indicates barren plateaus
-    and poor trainability.
-
-    This function samples random parameter initializations, computes
-    gradients using the parameter-shift rule, and analyzes the variance
-    of these gradients to detect barren plateaus.
+    Measures ``Var[∂C/∂θ_k]`` for the benchmark's variational classifier
+    ``C(x, θ) = ⟨0| U(x)† W(θ)† O W(θ) U(x) |0⟩`` at random initialisation,
+    with the data ``x`` drawn from ``input_range`` and the variational angles
+    ``θ`` drawn from ``[-π, π)``, averaged over the parameters inside the
+    read-out's light cone. Low variance — especially variance that decays
+    exponentially with qubit count — indicates a barren plateau.
 
     Parameters
     ----------
@@ -516,48 +545,44 @@ def estimate_trainability(
         The encoding instance to analyze. Must be a valid encoding that
         implements the ``get_circuit()`` method.
     n_samples : int, default=500
-        Number of random parameter initializations to sample. Higher
-        values give more accurate estimates but take longer to compute.
-        Minimum value is 10, recommended minimum is 50.
+        Number of random ``(x, θ)`` samples. Higher values give more accurate
+        estimates but take longer to compute. Minimum value is 10,
+        recommended minimum is 50.
     input_range : tuple[float, float], default=(0, 2π)
-        Range for sampling random input/parameter values as ``(min, max)``.
-        The default range covers full rotation angles for quantum gates.
-    observable : {"computational", "pauli_z", "global_z"}, default="computational"
-        Observable to use for gradient computation:
+        Range from which each data feature is drawn, as ``(min, max)``. The
+        default is a full rotation period, matching the benchmark's feature
+        scaling.
+    observable : {"pauli_z", "global_z", "computational"}, default="pauli_z"
+        Read-out observable ``O``:
 
-        - ``"computational"``: Probability of |0...0⟩ state (local)
-        - ``"pauli_z"``: Expectation value of Z on first qubit (local)
-        - ``"global_z"``: Expectation value of Z⊗Z⊗...⊗Z (global)
+        - ``"pauli_z"``: ``Z`` on qubit 0 (local; the classifier's read-out)
+        - ``"global_z"``: ``Z⊗Z⊗…⊗Z`` (global)
+        - ``"computational"``: projector onto ``|0…0⟩`` (global)
 
-        Local observables are less prone to false positives for barren
-        plateau detection and are recommended for most use cases.
+        Global observables exhibit cost-function-induced barren plateaus even
+        in shallow circuits; use them to study that effect specifically.
     seed : int, optional
         Random seed for reproducibility. If None, uses system entropy.
         For reproducible results, always specify a seed.
     backend : {"pennylane", "qiskit", "cirq"}, default="pennylane"
-        Backend for circuit simulation and gradient computation:
-
-        - ``"pennylane"``: Uses PennyLane's default.qubit simulator
-        - ``"qiskit"``: Uses Qiskit's Statevector simulator
-        - ``"cirq"``: Uses Cirq's Simulator for statevector simulation
+        Backend that simulates the encoded state ``U(x)|0⟩``. The variational
+        read-out and its gradient are evaluated exactly in NumPy, so every
+        backend yields the same result up to floating-point precision.
     return_details : bool, default=False
         If True, return full result dictionary with detailed statistics.
         If False, return only the trainability estimate as a float.
     verbose : bool, default=False
         If True, log progress information during computation.
     parallel : bool or {'thread', 'process'}, default=False
-        Parallel-dispatch mode for the per-sample gradient computation.
-        Trainability is the most expensive of the three analyses
-        (``2 * n_features`` simulations per sample for the
-        parameter-shift rule), so parallelism delivers the largest
-        wall-clock speedup here.
+        Parallel-dispatch mode for the per-sample computation (one encoding
+        simulation plus one adjoint gradient sweep per sample).
 
         - ``False`` (default) — sequential, no executor overhead.
         - ``True`` or ``'thread'`` — :class:`ThreadPoolExecutor`.
         - ``'process'`` — :class:`ProcessPoolExecutor` with the encoding
           pickled once per worker. Workers exchange only NumPy float
-          arrays (gradient vectors), so process-pool parallelism works
-          with **all** three backends here.
+          arrays, so process-pool parallelism works with **all** three
+          backends here.
 
         Output is numerically identical across all modes for a fixed
         ``seed`` — the RNG is fully consumed in the main process before
@@ -568,14 +593,13 @@ def estimate_trainability(
     max_workers : int or None, default=None
         Maximum number of workers when ``parallel`` is enabled.
     sampling : {'uniform', 'sobol'}, default='uniform'
-        Strategy for drawing the random per-sample inputs:
+        Strategy for drawing the per-sample ``(x, θ)`` pairs:
 
-        - ``'uniform'`` (default, unchanged): pseudo-random i.i.d.
-          uniform draws.
-        - ``'sobol'``: Sobol' low-discrepancy quasi-random sequence,
-          seeded from the same ``seed`` argument. Typically gives the
-          same variance accuracy with **30-50% fewer samples**. For
-          best statistical properties choose ``n_samples`` as a power
+        - ``'uniform'`` (default): pseudo-random i.i.d. uniform draws.
+        - ``'sobol'``: a scrambled Sobol' sequence over the joint
+          ``(x, θ)`` hypercube, seeded from the same ``seed`` argument.
+          Typically gives the same variance accuracy with fewer samples.
+          For best statistical properties choose ``n_samples`` as a power
           of two.
     confidence_level : float, default=0.95
         Two-sided confidence level for the bootstrap CIs on
@@ -587,6 +611,10 @@ def estimate_trainability(
         percentile CIs (only when ``return_details=True``). 200
         stabilizes the percentile endpoints to ~1% jitter at
         negligible cost.
+    n_var_layers : int, default=2
+        Number of variational layers ``L`` in the read-out ``W(θ)``. The
+        default matches :class:`~encoding_atlas.benchmark.VQCClassifier`
+        and the benchmark. The circuit has ``L * n_qubits`` parameters.
 
     Returns
     -------
@@ -594,28 +622,27 @@ def estimate_trainability(
         If ``return_details=False``: Trainability estimate in [0, 1],
         where higher values indicate better trainability.
 
-        If ``return_details=True``: Dictionary containing:
-
-        - ``trainability_estimate``: float in [0, 1]
-        - ``gradient_variance``: variance computed over successful samples only
-        - ``barren_plateau_risk``: "low", "medium", or "high"
-        - ``effective_dimension``: estimated effective parameter dimension
-        - ``n_samples``: total number of samples requested
-        - ``n_successful_samples``: samples used for variance computation
-        - ``per_parameter_variance``: variance for each parameter
-        - ``n_failed_samples``: number of failed gradient computations
+        If ``return_details=True``: a :class:`TrainabilityResult` with the
+        score, ``gradient_variance``, ``barren_plateau_risk``,
+        ``effective_dimension``, sample counts, ``per_parameter_variance``
+        of shape ``(n_var_layers * n_qubits,)``, bootstrap CIs, and the
+        ``sampling``, ``n_var_layers`` and ``observable`` that produced them,
+        and the ``live_parameter_mask`` the variance was averaged over.
 
     Raises
     ------
     InsufficientSamplesError
         If ``n_samples`` < 10.
+    ValueError
+        If ``input_range``, ``observable``, ``backend``, ``parallel``,
+        ``sampling``, the CI arguments or ``n_var_layers`` are invalid.
     SimulationError
         If too many gradient computations fail (> 20% of samples).
     AnalysisError
         If the encoding is invalid or cannot be analyzed.
 
-    Warnings
-    --------
+    Warns
+    -----
     UserWarning
         If ``n_samples`` < 50, a warning is issued about potential
         statistical unreliability.
@@ -629,6 +656,11 @@ def estimate_trainability(
     means the encoding appears more trainable than one with score 0.5,
     but actual training success depends on many other factors.
 
+    An encoding's own internal parameters (for instance
+    :class:`~encoding_atlas.TrainableEncoding`'s rotation angles) are held
+    fixed: the encoding is treated as a feature map, exactly as the benchmark
+    trains it.
+
     **Barren Plateau Risk Levels:**
 
     - "low" (variance ≥ 1e-3): Training should proceed normally
@@ -639,27 +671,29 @@ def estimate_trainability(
       - Local cost functions
       - Parameter initialization strategies
 
+    Thresholds are relaxed for circuits wider than four qubits; see
+    :func:`detect_barren_plateau`.
+
     **Computational Cost:**
 
-    Each sample requires computing gradients for all parameters, which
-    involves 2 × n_parameters circuit evaluations (parameter-shift rule).
-    Total circuit evaluations = 2 × n_parameters × n_samples.
+    Each sample costs one simulation of the encoding plus one adjoint sweep
+    through the read-out, ``O(n_var_layers · n_qubits · 2^n_qubits)``.
 
     **Failed Sample Handling:**
 
-    Gradient computation may fail for certain parameter configurations
-    due to numerical instabilities or backend issues. Failed samples are
-    completely excluded from variance computation to ensure unbiased
-    statistical estimates. If more than 20% of samples fail, a
-    :exc:`SimulationError` is raised. The number of successful samples
-    used is reported in ``n_successful_samples`` when ``return_details=True``.
+    Gradient computation may fail for certain inputs due to numerical
+    instabilities or backend issues. Failed samples are completely excluded
+    from variance computation to ensure unbiased statistical estimates. If
+    more than 20% of samples fail, a :exc:`SimulationError` is raised. The
+    number of successful samples used is reported in
+    ``n_successful_samples`` when ``return_details=True``.
 
     **Best Practices:**
 
     1. Use at least 100 samples for reliable estimates
     2. Compare encodings using the same seed for fair comparison
-    3. Use local observables ("computational" or "pauli_z") unless
-       specifically studying global cost functions
+    3. Keep the default local observable unless specifically studying
+       global cost functions
     4. For publication, report both trainability score and gradient
        variance with confidence intervals
 
@@ -670,24 +704,20 @@ def estimate_trainability(
     >>> from encoding_atlas import AngleEncoding
     >>> enc = AngleEncoding(n_features=4)
     >>> train = estimate_trainability(enc, seed=42)
-    >>> print(f"Trainability: {train:.4f}")
+    >>> 0.0 <= train <= 1.0
+    True
 
     Detailed analysis:
 
     >>> result = estimate_trainability(
     ...     enc, n_samples=200, seed=42, return_details=True
     ... )
-    >>> print(f"Variance: {result['gradient_variance']:.2e}")
-    >>> print(f"Risk level: {result['barren_plateau_risk']}")
-
-    Comparing encodings:
-
-    >>> from encoding_atlas import IQPEncoding
-    >>> enc1 = AngleEncoding(n_features=4)
-    >>> enc2 = IQPEncoding(n_features=4, reps=2)
-    >>> t1 = estimate_trainability(enc1, seed=42)
-    >>> t2 = estimate_trainability(enc2, seed=42)
-    >>> print(f"Angle: {t1:.4f}, IQP: {t2:.4f}")
+    >>> result["per_parameter_variance"].shape  # n_var_layers * n_qubits
+    (8,)
+    >>> result["n_live_parameters"]  # inside the Z₀ read-out's light cone
+    3
+    >>> result["barren_plateau_risk"]
+    'low'
 
     See Also
     --------
@@ -724,18 +754,18 @@ def estimate_trainability(
             f"Provide a valid range like (0.0, 2*np.pi)."
         )
 
-    valid_observables = {"computational", "pauli_z", "global_z"}
-    if observable not in valid_observables:
+    if observable not in VARIATIONAL_OBSERVABLES:
         raise ValueError(
-            f"observable must be one of {sorted(valid_observables)}, "
+            f"observable must be one of {sorted(VARIATIONAL_OBSERVABLES)}, "
             f"got {observable!r}."
         )
 
-    valid_backends = {"pennylane", "qiskit", "cirq"}
-    if backend not in valid_backends:
+    if backend not in _VALID_BACKENDS:
         raise ValueError(
-            f"backend must be one of {sorted(valid_backends)}, got {backend!r}."
+            f"backend must be one of {sorted(_VALID_BACKENDS)}, got {backend!r}."
         )
+
+    n_var_layers = _validate_n_var_layers(n_var_layers)
 
     # Validate parallel argument upfront for a clean ValueError on bad input.
     mode = resolve_parallel_mode(parallel)
@@ -748,40 +778,17 @@ def estimate_trainability(
     # Setup
     # =========================================================================
     rng = create_rng(seed)
-    n_features = encoding.n_features
-    n_qubits = encoding.n_qubits
-
-    # Estimate number of parameters from encoding properties
-    try:
-        n_params = encoding.properties.parameter_count
-    except Exception:
-        # Fallback: assume n_features parameters
-        n_params = n_features
-        _logger.debug(
-            "Could not get parameter_count from properties, "
-            "using n_features=%d as fallback",
-            n_features,
-        )
-
-    # Non-parameterized encodings (parameter_count=0) have no trainable
-    # parameters — all rotation angles are derived from input data.  Use
-    # n_features as the effective parameter count so that gradient analysis
-    # and barren-plateau detection remain meaningful (the gradients are
-    # w.r.t. the input features that drive the circuit).
-    if n_params == 0:
-        n_params = n_features
-        _logger.debug(
-            "parameter_count is 0 (non-trainable encoding); "
-            "using n_features=%d as effective n_params",
-            n_features,
-        )
+    n_features = int(encoding.n_features)
+    n_qubits = int(encoding.n_qubits)
+    n_params = variational_parameter_count(n_qubits, n_var_layers)
 
     if verbose:
         _logger.info(
-            "Estimating trainability for %s (n_qubits=%d, n_params=%d, "
-            "n_samples=%d, observable=%r, backend=%r)",
+            "Estimating trainability for %s (n_qubits=%d, n_var_layers=%d, "
+            "n_params=%d, n_samples=%d, observable=%r, backend=%r)",
             encoding.__class__.__name__,
             n_qubits,
+            n_var_layers,
             n_params,
             n_samples,
             observable,
@@ -789,30 +796,29 @@ def estimate_trainability(
         )
 
     # =========================================================================
+    # Draw (x, θ) Samples
+    # =========================================================================
+    # One draw over the joint hypercube, so 'sobol' is low-discrepancy in
+    # (x, θ) jointly, and the main process consumes the RNG completely before
+    # any work is dispatched — which is what makes every parallel mode
+    # reproduce the sequential result exactly.
+    unit = generate_sample_batch(
+        n_samples, n_features + n_params, (0.0, 1.0), rng, sampling
+    )
+    x_low, x_high = float(input_range[0]), float(input_range[1])
+    t_low, t_high = _THETA_RANGE
+    X_samples = x_low + unit[:, :n_features] * (x_high - x_low)
+    theta_samples = (t_low + unit[:, n_features:] * (t_high - t_low)).reshape(
+        n_samples, n_var_layers, n_qubits
+    )
+
+    # =========================================================================
     # Sample Gradients
     # =========================================================================
-    #
-    # COMPUTATIONAL COMPLEXITY:
-    # Each sample requires computing gradients for all n_features parameters.
-    # Using the parameter-shift rule, this requires 2 circuit evaluations per
-    # parameter. Total circuit simulations:
-    #
-    #     Total = 2 × n_features × n_samples
-    #
-    # For default values (n_samples=500) with typical encodings:
-    #     - 4 features: 4,000 simulations
-    #     - 8 features: 8,000 simulations
-    #     - 16 features: 16,000 simulations
-    #
-    # Each simulation is O(2^n_qubits) for statevector computation.
-    #
-    # MEMORY LAYOUT:
-    # Pre-allocate array for gradient samples. Successful samples are stored
-    # contiguously starting from index 0. Failed samples are not stored,
-    # ensuring variance computation uses only valid data.
-    #
+    # Successful samples are packed contiguously from index 0; failed samples
+    # are not stored, so the variance uses valid data only.
     gradient_samples: NDArray[np.float64] = np.zeros(
-        (n_samples, n_features), dtype=np.float64
+        (n_samples, n_params), dtype=np.float64
     )
     n_successful = 0
     n_failed = 0
@@ -820,44 +826,41 @@ def estimate_trainability(
     # Log progress at 10% intervals
     log_interval = max(1, n_samples // 10)
 
-    # Pre-generate all random inputs in the main process. The
-    # ``sampling`` selector picks between i.i.d. uniform draws (default,
-    # unchanged behavior) and Sobol' low-discrepancy sequences; both are
-    # seeded from the same ``rng`` so a given ``(seed, sampling)`` pair
-    # produces identical numerical output across all parallel modes.
-    X_samples = generate_sample_batch(n_samples, n_features, input_range, rng, sampling)
+    def _record(
+        index: int,
+        gradients: NDArray[np.floating[Any]] | None,
+        error: str | None,
+    ) -> None:
+        nonlocal n_successful, n_failed
+        if gradients is not None:
+            gradient_samples[n_successful, :] = gradients
+            n_successful += 1
+            return
+        n_failed += 1
+        # Expected failures at DEBUG, unexpected at WARNING.
+        assert error is not None
+        if error.startswith("expected:"):
+            _logger.debug(
+                "Gradient computation failed at sample %d/%d: %s",
+                index + 1,
+                n_samples,
+                error.split(":", 2)[2],
+            )
+        else:
+            _logger.warning(
+                "Unexpected error during gradient computation at sample %d: %s",
+                index + 1,
+                error.split(":", 2)[2],
+            )
 
     if mode == "sequential" or n_samples <= 1:
         # Sequential path keeps the inline loop so the per-sample log
         # messages remain available with their sample indices intact.
         for i in range(n_samples):
-            x = X_samples[i]
             gradients, error = _compute_one_gradient_sample(
-                encoding, x, backend, observable
+                encoding, X_samples[i], theta_samples[i], backend, observable
             )
-            if gradients is not None:
-                if len(gradients) != n_features:
-                    gradients = _pad_or_truncate(gradients, n_features)
-                gradient_samples[n_successful, :] = gradients
-                n_successful += 1
-            else:
-                n_failed += 1
-                # Preserve original log levels: expected failures at DEBUG,
-                # unexpected at WARNING.
-                assert error is not None
-                if error.startswith("expected:"):
-                    _logger.debug(
-                        "Gradient computation failed at sample %d/%d: %s",
-                        i + 1,
-                        n_samples,
-                        error.split(":", 2)[2],
-                    )
-                else:
-                    _logger.warning(
-                        "Unexpected error during gradient computation at sample %d: %s",
-                        i + 1,
-                        error.split(":", 2)[2],
-                    )
+            _record(i, gradients, error)
             if verbose and (i + 1) % log_interval == 0:
                 _logger.info(
                     "Progress: %d/%d samples completed (%d successful, %d failed)",
@@ -871,13 +874,14 @@ def estimate_trainability(
         # ``executor.map``, so packing successful gradients contiguously
         # from index 0 matches the sequential implementation exactly.
         if mode == "thread":
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            with ThreadPoolExecutor(max_workers=max_workers) as thread_pool:
                 results = list(
-                    executor.map(
-                        lambda x: _compute_one_gradient_sample(
-                            encoding, x, backend, observable
+                    thread_pool.map(
+                        lambda x, t: _compute_one_gradient_sample(
+                            encoding, x, t, backend, observable
                         ),
                         X_samples,
+                        theta_samples,
                     )
                 )
         else:  # mode == "process"
@@ -885,31 +889,15 @@ def estimate_trainability(
                 max_workers=max_workers,
                 initializer=_trainability_worker_init,
                 initargs=(encoding, backend, observable),
-            ) as executor:
-                results = list(executor.map(_trainability_worker_compute, X_samples))
+            ) as process_pool:
+                results = list(
+                    process_pool.map(
+                        _trainability_worker_compute, X_samples, theta_samples
+                    )
+                )
 
         for i, (gradients, error) in enumerate(results):
-            if gradients is not None:
-                if len(gradients) != n_features:
-                    gradients = _pad_or_truncate(gradients, n_features)
-                gradient_samples[n_successful, :] = gradients
-                n_successful += 1
-            else:
-                n_failed += 1
-                assert error is not None
-                if error.startswith("expected:"):
-                    _logger.debug(
-                        "Gradient computation failed at sample %d/%d: %s",
-                        i + 1,
-                        n_samples,
-                        error.split(":", 2)[2],
-                    )
-                else:
-                    _logger.warning(
-                        "Unexpected error during gradient computation at sample %d: %s",
-                        i + 1,
-                        error.split(":", 2)[2],
-                    )
+            _record(i, gradients, error)
 
     # Check if too many samples failed
     failure_fraction = n_failed / n_samples
@@ -948,13 +936,13 @@ def estimate_trainability(
     # Using ddof=1 for unbiased sample variance (Bessel's correction).
     per_param_variance = np.var(successful_gradients, axis=0, ddof=1)
 
-    # Handle edge case: single feature
-    if len(per_param_variance) == 0:
-        per_param_variance = np.array([0.0], dtype=np.float64)
-
-    # Overall gradient variance (mean of per-parameter variances)
-    # This is the primary metric for barren plateau detection
-    gradient_variance = float(np.mean(per_param_variance))
+    # Overall gradient variance: the mean over the parameters that can move
+    # the cost. Parameters outside the read-out's light cone contribute
+    # identically-zero gradients, and averaging them in would dilute the
+    # variance by a width-dependent factor unrelated to the encoding.
+    live = live_parameter_mask(n_qubits, n_var_layers, observable)
+    n_live = int(np.count_nonzero(live))
+    gradient_variance = float(np.mean(per_param_variance[live]))
 
     # =========================================================================
     # Effective Dimension Computation (Heuristic Metric)
@@ -1003,7 +991,7 @@ def estimate_trainability(
     barren_plateau_risk = detect_barren_plateau(
         gradient_variance=gradient_variance,
         n_qubits=n_qubits,
-        n_params=n_params,
+        n_params=n_live,
     )
 
     # =========================================================================
@@ -1023,6 +1011,9 @@ def estimate_trainability(
             n_samples,
         )
 
+    if not return_details:
+        return trainability_estimate
+
     # =========================================================================
     # Bootstrap CIs (only for the detailed result path)
     # =========================================================================
@@ -1032,62 +1023,51 @@ def estimate_trainability(
     # bootstrap on the gradient matrix (rather than on the variance
     # scalar) properly propagates the variance estimator's own
     # non-linearity through the CI.
-    if return_details:
-        if n_successful >= 2:
-            indices = rng.integers(0, n_successful, size=(n_bootstrap_ci, n_successful))
-            boot_variances: NDArray[np.float64] = np.empty(
-                n_bootstrap_ci, dtype=np.float64
-            )
-            for b in range(n_bootstrap_ci):
-                resample = successful_gradients[indices[b]]
-                per_param = np.var(resample, axis=0, ddof=1)
-                boot_variances[b] = float(np.mean(per_param))
-            boot_trainabilities = np.array(
-                [_variance_to_trainability(variance=v) for v in boot_variances],
-                dtype=np.float64,
-            )
-            alpha = 1.0 - float(confidence_level)
-            lo_q = 100.0 * (alpha / 2.0)
-            hi_q = 100.0 * (1.0 - alpha / 2.0)
-            gradient_variance_ci_lower = float(np.percentile(boot_variances, lo_q))
-            gradient_variance_ci_upper = float(np.percentile(boot_variances, hi_q))
-            trainability_ci_lower = float(np.percentile(boot_trainabilities, lo_q))
-            trainability_ci_upper = float(np.percentile(boot_trainabilities, hi_q))
-            # Guard against tiny numerical inversions of (lower, upper).
-            if gradient_variance_ci_upper < gradient_variance_ci_lower:
-                gradient_variance_ci_upper = gradient_variance_ci_lower
-            if trainability_ci_upper < trainability_ci_lower:
-                trainability_ci_upper = trainability_ci_lower
-        else:
-            # Degenerate case — collapse CIs to the point estimates so
-            # consumers can still index every CI key safely.
-            gradient_variance_ci_lower = gradient_variance
-            gradient_variance_ci_upper = gradient_variance
-            trainability_ci_lower = trainability_estimate
-            trainability_ci_upper = trainability_estimate
+    indices = rng.integers(0, n_successful, size=(n_bootstrap_ci, n_successful))
+    boot_variances: NDArray[np.float64] = np.empty(n_bootstrap_ci, dtype=np.float64)
+    for b in range(n_bootstrap_ci):
+        resample = successful_gradients[indices[b]][:, live]
+        boot_variances[b] = float(np.mean(np.var(resample, axis=0, ddof=1)))
+    boot_trainabilities = np.array(
+        [_variance_to_trainability(variance=v) for v in boot_variances],
+        dtype=np.float64,
+    )
+    alpha = 1.0 - float(confidence_level)
+    lo_q = 100.0 * (alpha / 2.0)
+    hi_q = 100.0 * (1.0 - alpha / 2.0)
+    gradient_variance_ci_lower = float(np.percentile(boot_variances, lo_q))
+    gradient_variance_ci_upper = float(np.percentile(boot_variances, hi_q))
+    trainability_ci_lower = float(np.percentile(boot_trainabilities, lo_q))
+    trainability_ci_upper = float(np.percentile(boot_trainabilities, hi_q))
+    # Guard against tiny numerical inversions of (lower, upper).
+    gradient_variance_ci_upper = max(
+        gradient_variance_ci_upper, gradient_variance_ci_lower
+    )
+    trainability_ci_upper = max(trainability_ci_upper, trainability_ci_lower)
 
     # =========================================================================
     # Return Results
     # =========================================================================
-    if return_details:
-        return TrainabilityResult(
-            trainability_estimate=trainability_estimate,
-            gradient_variance=gradient_variance,
-            barren_plateau_risk=barren_plateau_risk,
-            effective_dimension=effective_dimension,
-            n_samples=n_samples,
-            n_successful_samples=n_successful,
-            per_parameter_variance=per_param_variance,
-            n_failed_samples=n_failed,
-            trainability_ci_lower=trainability_ci_lower,
-            trainability_ci_upper=trainability_ci_upper,
-            gradient_variance_ci_lower=gradient_variance_ci_lower,
-            gradient_variance_ci_upper=gradient_variance_ci_upper,
-            confidence_level=float(confidence_level),
-            sampling=str(sampling),
-        )
-
-    return trainability_estimate
+    return TrainabilityResult(
+        trainability_estimate=trainability_estimate,
+        gradient_variance=gradient_variance,
+        barren_plateau_risk=barren_plateau_risk,
+        effective_dimension=effective_dimension,
+        n_samples=n_samples,
+        n_successful_samples=n_successful,
+        per_parameter_variance=per_param_variance,
+        n_failed_samples=n_failed,
+        trainability_ci_lower=trainability_ci_lower,
+        trainability_ci_upper=trainability_ci_upper,
+        gradient_variance_ci_lower=gradient_variance_ci_lower,
+        gradient_variance_ci_upper=gradient_variance_ci_upper,
+        confidence_level=float(confidence_level),
+        sampling=str(sampling),
+        n_var_layers=n_var_layers,
+        observable=str(observable),
+        n_live_parameters=n_live,
+        live_parameter_mask=live,
+    )
 
 
 # =============================================================================
@@ -1099,15 +1079,17 @@ def compute_gradient_variance(
     encoding: BaseEncoding,
     n_samples: int = _DEFAULT_N_SAMPLES,
     input_range: tuple[float, float] = _DEFAULT_INPUT_RANGE,
-    observable: Literal["computational", "pauli_z", "global_z"] = "computational",
+    observable: TrainabilityObservable = "pauli_z",
     seed: int | None = None,
     backend: Literal["pennylane", "qiskit", "cirq"] = "pennylane",
+    n_var_layers: int = _DEFAULT_N_VAR_LAYERS,
 ) -> float:
-    """Compute the average variance of parameter gradients.
+    """Compute ``Var[∂C/∂θ_k]`` averaged over the live variational parameters.
 
-    This is the core metric used for trainability estimation. It measures
-    how much the gradients vary across random parameter initializations.
-    Low variance indicates a flat optimization landscape (barren plateau).
+    This is the core metric used for trainability estimation: how much the
+    cost gradient of the variational classifier built on ``encoding`` varies
+    across random initialisations. Low variance indicates a flat
+    optimization landscape (barren plateau).
 
     This function is a convenience wrapper that calls :func:`estimate_trainability`
     and extracts only the gradient variance.
@@ -1117,15 +1099,17 @@ def compute_gradient_variance(
     encoding : BaseEncoding
         The encoding to analyze.
     n_samples : int, default=500
-        Number of random parameter samples.
+        Number of random ``(x, θ)`` samples.
     input_range : tuple[float, float], default=(0, 2π)
-        Range for sampling random parameters.
-    observable : {"computational", "pauli_z", "global_z"}, default="computational"
-        Observable for gradient computation.
+        Range for sampling each data feature.
+    observable : {"pauli_z", "global_z", "computational"}, default="pauli_z"
+        Read-out observable; see :func:`estimate_trainability`.
     seed : int, optional
         Random seed for reproducibility.
     backend : {"pennylane", "qiskit", "cirq"}, default="pennylane"
-        Backend for gradient computation.
+        Backend that simulates the encoded state.
+    n_var_layers : int, default=2
+        Number of variational layers in the read-out.
 
     Returns
     -------
@@ -1138,7 +1122,8 @@ def compute_gradient_variance(
     >>> from encoding_atlas import AngleEncoding
     >>> enc = AngleEncoding(n_features=4)
     >>> variance = compute_gradient_variance(enc, n_samples=100, seed=42)
-    >>> print(f"Gradient variance: {variance:.2e}")
+    >>> variance > 0
+    True
 
     See Also
     --------
@@ -1153,6 +1138,7 @@ def compute_gradient_variance(
         seed=seed,
         backend=backend,
         return_details=True,
+        n_var_layers=n_var_layers,
     )
     return result["gradient_variance"]
 
@@ -1208,8 +1194,8 @@ def detect_barren_plateau(
 
     - Base high-risk threshold: 1e-6
     - Base medium-risk threshold: 1e-3
-    - Size adjustment: thresholds scale with 2^(-n) to account for
-      natural variance decay
+    - Size adjustment: thresholds scale with 2^(-(n-4)/2) above four qubits
+      to account for natural variance decay
 
     **Practical Interpretation:**
 
@@ -1338,264 +1324,6 @@ def detect_barren_plateau(
 # =============================================================================
 
 
-def _compute_encoding_gradients(
-    encoding: BaseEncoding,
-    x: NDArray[np.floating[Any]],
-    observable: str,
-    backend: str,
-) -> NDArray[np.floating[Any]]:
-    """Compute gradients of expectation value with respect to input parameters.
-
-    Uses the parameter-shift rule for exact (analytical) gradient computation.
-    This is the standard method for differentiating quantum circuits with
-    gates of the form exp(-iθG/2) where G² = I (e.g., Pauli rotations).
-
-    Mathematical Background
-    -----------------------
-    For a parameterized gate U(θ) = exp(-iθG/2) where G is a generator with
-    eigenvalues ±1, the parameter-shift rule gives the exact gradient:
-
-        ∂⟨O⟩/∂θ = (⟨O⟩_{θ+π/2} - ⟨O⟩_{θ-π/2}) / 2
-
-    This formula is exact (not an approximation) and does not suffer from
-    the numerical instabilities of finite-difference methods.
-
-    Reference: Schuld et al. (2019), "Evaluating analytic gradients on
-    quantum hardware", Physical Review A, 99(3), 032331.
-
-    Computational Complexity
-    ------------------------
-    This function requires **2 × n_features** circuit simulations:
-    - For each of the n_features parameters, we evaluate the circuit twice
-      (forward shift θ+π/2 and backward shift θ-π/2)
-
-    For the full trainability estimation with n_samples:
-        Total simulations = 2 × n_features × n_samples
-
-    Example: 500 samples, 4 features → 4,000 circuit evaluations
-
-    Memory Optimization
-    -------------------
-    This implementation reuses a single working array for shifted parameters
-    instead of allocating 2×n_features copies, reducing memory pressure
-    especially for large feature counts or when called repeatedly.
-
-    Parameters
-    ----------
-    encoding : BaseEncoding
-        The encoding instance to differentiate.
-    x : NDArray[np.floating]
-        Input parameter vector of shape (n_features,). Not modified.
-    observable : str
-        Observable type: "computational", "pauli_z", or "global_z".
-    backend : str
-        Backend for circuit simulation.
-
-    Returns
-    -------
-    NDArray[np.floating]
-        Gradient vector of shape (n_features,), where element i is
-        ∂⟨O⟩/∂xᵢ evaluated at the input point x.
-
-    Raises
-    ------
-    SimulationError
-        If statevector simulation fails for any shifted parameter.
-    NumericalInstabilityError
-        If gradient computation produces NaN or Inf values, indicating
-        numerical issues in the expectation value computation.
-
-    Notes
-    -----
-    Implementation: builds the full ``(2 * n_features, n_features)``
-    matrix of parameter-shifted inputs and dispatches **one** batched
-    simulator call. The observable is then evaluated for all
-    ``2 * n_features`` resulting statevectors in a single vectorised
-    NumPy expression via :func:`_expectations_batch`. Compared to the
-    previous per-parameter loop — which paid Python-call overhead for
-    every shifted vector and rebuilt the ``Z⊗...⊗Z`` eigenvalue array
-    on every ``global_z`` evaluation — this consolidates the work into
-    one allocation and one BLAS-backed reduction. The number of
-    statevector simulations is unchanged (the parameter-shift rule
-    requires exactly ``2 * n_features``), and the gradient values are
-    bit-for-bit identical (regression-tested).
-    """
-    n_features = len(x)
-    if n_features == 0:
-        return np.zeros(0, dtype=np.float64)
-
-    # Parameter-shift value: π/2 for standard Pauli rotation gates.
-    shift = np.pi / 2.0
-
-    # Build the (2 * n_features, n_features) shifted-input matrix.
-    # Row ``2k`` carries the +shift on parameter ``k`` and row
-    # ``2k+1`` carries the -shift, so the parameter-shift formula
-    # reduces to a paired slice at the end.
-    shifted = np.broadcast_to(x, (2 * n_features, n_features)).copy()
-    rows = np.arange(2 * n_features)
-    params = rows >> 1  # integer divide by 2
-    signs = np.where(rows & 1 == 0, shift, -shift)
-    shifted[rows, params] += signs
-
-    # Single batched simulator dispatch and single vectorised expectation
-    # evaluation. The trainability-local "pauli_z" alias means *local*
-    # ⟨Z₀⟩, which the shared helper exposes as "local_z" — translate
-    # here so callers preserve the existing trainability API contract.
-    states = simulate_encoding_statevectors_batch(
-        encoding,
-        shifted,
-        backend=cast("Literal['pennylane', 'qiskit', 'cirq']", backend),
-    )
-    aliased_observable = "local_z" if observable == "pauli_z" else observable
-    expectations = _expectations_batch(
-        states,
-        cast(
-            "Literal['computational', 'global_z', 'local_z', 'pauli_z']",
-            aliased_observable,
-        ),
-        int(encoding.n_qubits),
-    )
-
-    # The paired subtraction below is the parameter-shift formula. With
-    # adversarial inputs ((-inf) - (-inf), inf - inf, etc.) NumPy emits
-    # a benign RuntimeWarning even though the explicit ``isfinite``
-    # check immediately after correctly turns the result into a
-    # ``NumericalInstabilityError``. Suppressing the warning keeps the
-    # error path clean for callers.
-    with np.errstate(invalid="ignore"):
-        gradients = (expectations[::2] - expectations[1::2]) / 2.0
-
-    # Per-parameter numerical-stability check, matching the granularity
-    # of the previous loop-based implementation. Reports the first bad
-    # index so the worker error message stays informative.
-    if not np.all(np.isfinite(gradients)):
-        bad = int(np.argmax(~np.isfinite(gradients)))
-        raise NumericalInstabilityError(
-            f"Gradient computation produced invalid value: {gradients[bad]}",
-            value=float(gradients[bad]),
-            operation="parameter_shift",
-            details={
-                "param_index": bad,
-                "exp_plus": float(expectations[2 * bad]),
-                "exp_minus": float(expectations[2 * bad + 1]),
-                "x_original": float(x[bad]),
-            },
-        )
-
-    return gradients.astype(np.float64, copy=False)
-
-
-def _compute_expectation_value(
-    encoding: BaseEncoding,
-    x: NDArray[np.floating[Any]],
-    observable: str,
-    backend: str,
-) -> float:
-    """Compute expectation value of observable for given input parameters.
-
-    Parameters
-    ----------
-    encoding : BaseEncoding
-        The encoding instance.
-    x : NDArray[np.floating]
-        Input parameter vector.
-    observable : str
-        Observable type. One of ``"computational"``, ``"pauli_z"`` (local
-        Z on the first qubit — note the trainability-specific naming) or
-        ``"global_z"`` (global Z⊗...⊗Z).
-    backend : str
-        Simulation backend.
-
-    Returns
-    -------
-    float
-        Expectation value of the observable.
-
-    Raises
-    ------
-    SimulationError
-        If statevector simulation fails.
-    ValueError
-        If observable type is unknown.
-
-    Implementation
-    --------------
-    Delegates the observable arithmetic to the shared, vectorised
-    helpers in ``encoding_atlas.analysis._utils`` so both this
-    single-sample path and the batched
-    :func:`_compute_encoding_gradients` path agree byte-for-byte and
-    share the cached ``global_z`` eigenvalue array.
-    """
-    statevector = simulate_encoding_statevector(
-        encoding, x, backend=cast("Literal['pennylane', 'qiskit', 'cirq']", backend)
-    )
-    n_qubits = int(encoding.n_qubits)
-
-    if observable == "computational":
-        # ⟨0...0|ρ|0...0⟩ = |⟨0...0|ψ⟩|² = |ψ[0]|²
-        amp0 = statevector[0]
-        return float(amp0.real * amp0.real + amp0.imag * amp0.imag)
-
-    if observable == "pauli_z":
-        # Trainability's "pauli_z" means *local* Z on the first qubit.
-        return _local_z_expectation_from_state(statevector, n_qubits)
-
-    if observable == "global_z":
-        # ⟨Z⊗Z⊗...⊗Z⟩ via the cached eigenvalue vector.
-        z = _expectations_batch(statevector.reshape(1, -1), "global_z", n_qubits)
-        return float(z[0])
-
-    raise ValueError(f"Unknown observable type: {observable!r}")
-
-
-def _compute_prob_zero_first_qubit(
-    statevector: NDArray[np.complexfloating[Any, Any]],
-    n_qubits: int,
-) -> float:
-    """Compute probability of measuring 0 on the first qubit.
-
-    The first qubit corresponds to the most significant bit (MSB) in the
-    computational basis ordering used by this module.
-
-    Mathematical Details
-    --------------------
-    In the computational basis |i⟩ where i ∈ {0, 1, ..., 2ⁿ-1}, the first
-    qubit (qubit 0) corresponds to the most significant bit. For a state
-    |ψ⟩ = Σᵢ αᵢ|i⟩, the probability of measuring 0 on the first qubit is:
-
-        P(q₀ = 0) = Σᵢ |αᵢ|² where bit (n-1) of i is 0
-
-    This is equivalent to summing over the first half of basis states
-    (indices 0 to 2^(n-1) - 1), since these are exactly the states where
-    the MSB is 0.
-
-    Parameters
-    ----------
-    statevector : NDArray[np.complexfloating]
-        Statevector of shape (2^n_qubits,). Must be a valid quantum state
-        (normalized, though normalization is not enforced here).
-    n_qubits : int
-        Number of qubits. Must satisfy len(statevector) == 2^n_qubits.
-
-    Returns
-    -------
-    float
-        Probability of measuring 0 on the first qubit, in range [0, 1].
-
-    Notes
-    -----
-    The MSB (first qubit) being 0 is exactly equivalent to the index
-    lying in the first half of the Hilbert space — bit ``n_qubits - 1``
-    of indices ``[0, 2^(n_qubits-1))`` is 0 by construction. So instead
-    of allocating an index array and a boolean mask per call (the
-    previous implementation), a single contiguous slice and a
-    ``real**2 + imag**2`` reduction suffices.
-    """
-    half = 1 << (n_qubits - 1)
-    head = statevector[:half]
-    return float(np.sum(head.real * head.real + head.imag * head.imag))
-
-
 def _variance_to_trainability(variance: float) -> float:
     """Convert gradient variance to trainability score in [0, 1].
 
@@ -1655,38 +1383,3 @@ def _variance_to_trainability(variance: float) -> float:
     trainability = float(np.clip(trainability, 0.0, 1.0))
 
     return trainability
-
-
-def _pad_or_truncate(
-    arr: NDArray[np.floating[Any]],
-    target_length: int,
-) -> NDArray[np.floating[Any]]:
-    """Pad or truncate array to target length.
-
-    Used to handle dimension mismatches between encoding parameters
-    and computed gradients.
-
-    Parameters
-    ----------
-    arr : NDArray[np.floating]
-        Input array to resize.
-    target_length : int
-        Desired length.
-
-    Returns
-    -------
-    NDArray[np.floating]
-        Array of exactly target_length elements.
-    """
-    current_length = len(arr)
-
-    if current_length == target_length:
-        return arr
-    elif current_length < target_length:
-        # Pad with zeros
-        padded = np.zeros(target_length, dtype=arr.dtype)
-        padded[:current_length] = arr
-        return padded
-    else:
-        # Truncate
-        return arr[:target_length].copy()

@@ -9,6 +9,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Trainability did not measure a derivative, or trainability
+- `estimate_trainability` differentiated the encoding's *data* `x` with the
+  two-term shift `(f(x + π/2) − f(x − π/2)) / 2` and documented the result as
+  the exact `∂⟨O⟩/∂xᵢ`. That rule is exact only for a parameter entering a
+  single unit-frequency rotation, which holds for `angle` alone. A feature that
+  enters `RZ(2x)` cancels exactly; one that enters `(π − xᵢ)(π − xⱼ)` is not
+  periodic at all. Against a converged finite-difference reference, **13 of 15
+  encodings** returned values off by more than the derivative itself — for IQP
+  at one point `[0.001, −0.013, 0.015, −0.018]` where the derivative is
+  `[−1.05, −0.92, −1.17, −0.83]` — and the stored gradient variances were off by
+  factors from 0.5 to 152, unevenly enough to reorder the encodings. The only
+  check was a finite-difference test on `AngleEncoding(n_features=1)`, the one
+  case where the shift is exact.
+- Even exactly computed, a derivative with respect to data measures input
+  sensitivity, not trainability. `basis` scored **0.000** ("untrainable")
+  because thresholded inputs have zero `x`-derivative, and 16 single-layer
+  IQP/ZZ/Pauli and Hamiltonian configurations scored ~1e-33 because
+  `P(0…0) = 2⁻ⁿ` for every input — including two-qubit circuits, where a
+  barren plateau is not meaningful. The default observable, `P(0…0)`, was
+  documented as local; it is a global projector.
+- Trainability is now `Var[∂C/∂θ]` for the model the atlas benchmarks — the
+  encoding followed by `VQCClassifier`'s `n_var_layers` layers of `RY(θ)` and a
+  linear CNOT chain, read out as `⟨Z₀⟩` — with `x` drawn from `input_range` and
+  `θ` from `[−π, π)`, the classifier's own initialisation. Each `θ` enters one
+  `RY` gate, so the gradient is exact; it is computed by the adjoint method in
+  the new private module `analysis._variational` and agrees with PennyLane's
+  automatic differentiation of `VQCClassifier` to floating-point precision.
+- The variance is averaged over the parameters inside the read-out's light
+  cone. `⟨Z₀⟩` commutes with the chain's first CNOT, so only `θ[l, q]` with
+  `q ≤ L − 1 − l` can move the cost — three parameters at any width. Averaging
+  over all `L·n` would dilute the variance by `3 / (2n)`, a decay with width
+  that would itself read as a barren plateau. A consequence for the benchmark
+  itself: the classifier depends on the encoded state only through qubits
+  `0 … L − 1`. For a product encoding such as `angle` on the four-feature
+  datasets, features `x[2]` and `x[3]` cannot affect the Stage 6a VQC's
+  predictions (verified: its output is unchanged to 12 decimals when they
+  change). Stage 6a is unchanged; this is recorded so its VQC accuracies are
+  read accordingly.
+- API: `estimate_trainability` and `compute_gradient_variance` gain
+  `n_var_layers` (default 2, matching `VQCClassifier`), appended last so
+  positional calls are unaffected. The default `observable` is now `"pauli_z"`,
+  the classifier's read-out. `TrainabilityResult` gains `n_var_layers`,
+  `observable`, `n_live_parameters` and `live_parameter_mask`;
+  `per_parameter_variance` now has shape `(n_var_layers * n_qubits,)`. All
+  three backends give the same result to ~1e-15, since the backend only
+  prepares `U(x)|0⟩`. Each sample costs one encoding simulation rather than
+  `2 · n_features`, so Stage 5 now runs in about 90 s.
+
+#### `compute_parameter_gradient` and `compute_all_parameter_gradients` were not derivatives
+- Both public helpers applied the same `±π/2` shift to the input features and
+  carried the same "exact" claim. They now use a fourth-order central
+  difference with an absolute step `h = 1e-4`. They agree with analytic
+  derivatives of angle encoding to 6e-12 (including angles up to ±30), and
+  with an independent sixth-order Richardson reference to ~1e-11 on the IQP,
+  ZZ and higher-order-angle maps, the hardest case. Each component remains
+  bit-identical between the batched and per-feature functions.
+
+#### Stage 7 joined metrics from different circuits
+- `build_encoding_profiles` keyed every stage's results on `n_features`
+  alone, while Stages 1-5 sweep `reps`, `order`, `n_layers` and
+  `entanglement` at each width, so the configuration written last won. H4
+  paired Stage 1 depth with Stage 5 gradient variance from *different*
+  circuits in **16 of 58** pairs, and the per-encoding headline metrics came
+  from circuits other than the benchmarked one for `angle` (reps=2 instead of
+  1: depth 2 instead of 1), `higher_order_angle` (order=1 instead of 2) and
+  `so2_equivariant` (`max_angular_momentum=1` instead of 2: depth 6 instead of
+  10, entanglement capability 0.969 instead of 0.060).
+- Every join is now keyed on the full constructor configuration — recorded
+  parameters completed with the constructor's defaults — and anchored to the
+  configuration Stages 6a/6b benchmarked (`benchmarked_configurations`).
+  Scaling curves hold that configuration fixed and vary only the width. H4
+  pairs depth and gradient variance per measured circuit
+  (`trainability_records`): **121** points, against 55 before. A stage that
+  never measured the benchmarked circuit now leaves the metric `None` instead
+  of borrowing a neighbour's value.
+- That exposed two stage configurations that never measured the benchmarked
+  circuit: Stage 5b ran `AngleEncoding(reps=2)` and Stage 2
+  `DataReuploading(n_layers=3)`, while the benchmark ran `reps=1` and
+  `n_layers=2`. Both are corrected and re-run, one task each.
+
+#### The bundled atlas predated the corrections described above
+- `atlas/data/master_summary.json` was last regenerated before the
+  missing-metric fix, so the rank changes this changelog reports for it
+  (`higher_order_angle` 3 → 5, `cyclic_equivariant` 4 → 3, `amplitude` 5 → 4)
+  were never in the shipped data. It is now regenerated from the corrected
+  pipeline, so it carries those corrections as well as the ones above.
+
+#### The independent Stage 7 verifier still used the pre-correction scoring rule
+- `experiments/verify_stage7_results.py` re-derived the 7.9 scores by dropping
+  every absent metric, as 7.9 did before the explicit missing-metric policy, so
+  it disagreed with the pipeline for every encoding with a structural zero. It
+  now implements the policy independently and compares against the stored
+  four-decimal scores at half a unit in the last place.
+
+### Changed
+
+#### Corrected atlas results
+- **Trainability column**: re-measured for all 121 configurations; the
+  validator now rejects zero variances instead of exempting them, and checks
+  that parameters outside the light cone have zero variance and that
+  product-state encodings are width-invariant. All 1028 checks pass on the new
+  data; the old data fails 133.
+- **H4** (depth drives barren plateaus) remains supported, more strongly:
+  depth partial ρ = −0.738 (p = 4.4e-22) after controlling for family, against
+  −0.472 published; family partial ρ = −0.205 (p = 0.024). The variance of
+  the all-to-all maps (IQP, ZZ) decays with *width* rather than with `reps` —
+  an encoding-induced concentration — while hardware-efficient and
+  re-uploading maps lose variance with depth.
+- **H7** (no encoding dominates) is now **refuted**: with every objective taken
+  from the benchmarked circuit, `angle` is at least as good as every other
+  encoding on accuracy, inverse depth, trainability and noise resilience, and
+  is the whole Pareto front (previously `angle`, `basis`,
+  `higher_order_angle`, `swap_equivariant`). Its trainability margin over
+  `swap_equivariant`, `higher_order_angle`, `basis` and `amplitude` (0.722
+  against 0.712–0.717) lies inside their bootstrap 95% confidence intervals,
+  so this verdict rests partly on a statistical tie.
+- **H5** stands (U = 39, r = 1.0); its p-value moves from 0.0036 to 0.0105
+  because `angle` and `higher_order_angle` now have *identical* fidelity decay
+  — four single-qubit gates lose fidelity independently of the state — and the
+  tie switches SciPy from the exact to the tie-corrected test.
+- **Ranking (7.9)**: `angle` stays first. Trainability carries 20% of the
+  weight, so the order below it moves: `amplitude` 2, `swap_equivariant` 3,
+  `higher_order_angle` 4, `trainable_encoding` 5, `hardware_efficient` 6,
+  `cyclic_equivariant` 7, `basis` 10 (from 14), `qaoa_encoding` 11.
+- **Weight sweep (7.8)**: still no encoding is robustly top-3. `angle` is in
+  the top 3 in 87.1% of weightings in the regenerated Stage 7 run (88.2% at the
+  test suite's seed), below the 90% bar.
+- **Guide**: 6 of 72 `recommend_encoding` queries change, all at
+  `n_features=8` on a simulator, from `higher_order_angle` to `angle`
+  (priorities `trainability`, `speed` and `noise_resilience`), because
+  `angle`'s depth and noise resilience now describe its benchmarked circuit.
+
+### Added
+
+#### Tests
+- `test_variational.py`: the read-out engine against PennyLane autodiff for
+  every benchmarked encoding, all three observables and one to three layers;
+  against `VQCClassifier` and the pipeline's `experiments/vqc.py` gate for
+  gate; against the shift rule and closed forms; and the analytic light cone.
+- `test_input_gradients.py`: the input-gradient helpers against analytic
+  derivatives and an independent Richardson reference for every benchmarked
+  encoding, with a regression showing the old shift rule's error.
+- `tests/unit/experiments/`: same-circuit joins on fixtures built so that a
+  width-keyed join gives a different answer; a check over the committed stage
+  configurations that each one measures the benchmarked circuit (it fails on
+  the two configurations above); and the Stage 5 handler and validator.
+  Reintroducing the width-keyed join, the stale configurations or the
+  all-parameter average was confirmed to fail these tests.
+
+### Fixed
+
 #### The guide recommended encodings that cannot be constructed
 - `recommend_encoding(n_features=5, symmetry="general")` returned
   `symmetry_inspired` with confidence 0.88, and building it raised

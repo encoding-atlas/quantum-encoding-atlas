@@ -48,6 +48,12 @@ FIXTURE = {
 RAW_TRADEOFF = pathlib.Path("experiments/results/raw/stage7_tradeoff/summary.json")
 STAGE_CONFIG = pathlib.Path("experiments/configs/stage7_tradeoff.json")
 
+#: What the 2026-02-23 Stage 7 run published for the 7.8 weight sweep, before
+#: the median imputation was removed. Recorded here rather than read back from
+#: RAW_TRADEOFF, because regenerating Stage 7 overwrites that file.
+PUBLISHED_ROBUSTLY_TOP3 = ["angle"]
+PUBLISHED_ANGLE_PCT_TOP3 = 97.8
+
 
 class TestMetricReading:
     def test_measured_carries_its_value(self) -> None:
@@ -536,23 +542,24 @@ class TestAgainstTheRealAtlas:
             assert readings[name]["entanglement"].availability == "structurally_zero"
 
     def test_the_robustness_claim_does_not_survive(self) -> None:
-        """Published: robustly_top3 == ['angle'] at 97.8%. It was an artefact."""
+        """Published: robustly_top3 == ['angle'] at 97.8%. It was an artefact.
+
+        Without the median imputation angle fell to 80.8%. With the
+        trainability column measuring the classifier's own gradients, and
+        every metric taken from the benchmarked circuit, it is 88.2%: still
+        below the 90% bar, so no encoding is robustly top-3.
+        """
         from experiments.tradeoff import analyze_ranking_sensitivity
 
-        published = json.loads(RAW_TRADEOFF.read_text(encoding="utf-8"))["results"][0][
-            "result"
-        ]["sub_analyses"]["7.8"]
-        assert published["robustly_top3"] == ["angle"]
-        assert published["per_encoding"]["angle"]["pct_top3"] == pytest.approx(
-            97.8, abs=0.1
-        )
+        assert PUBLISHED_ROBUSTLY_TOP3 == ["angle"]
+        assert PUBLISHED_ANGLE_PCT_TOP3 > 90.0
 
         corrected = analyze_ranking_sensitivity(
             self._profiles(), n_samples=1000, seed=42
         )
         assert corrected["robustly_top3"] == []
         assert corrected["per_encoding"]["angle"]["pct_top3"] == pytest.approx(
-            80.8, abs=0.1
+            88.2, abs=0.1
         )
 
     def test_legacy_output_schema_is_preserved(self) -> None:
@@ -579,12 +586,13 @@ class TestAgainstTheRealAtlas:
         assert result["effective_weight"]["amplitude"] == pytest.approx(0.85)
 
     def test_final_ranking_still_has_angle_first(self) -> None:
-        """The correction moves ranks; it does not overturn the headline."""
+        """The corrections move ranks; they do not overturn the headline."""
         from experiments.tradeoff import analyze_pareto_front, compute_final_ranking
 
         profiles = self._profiles()
         ranking = compute_final_ranking(profiles, analyze_pareto_front(profiles))
         order = [r["encoding"] for r in ranking["rankings"]]
         assert order[0] == "angle"
-        assert order.index("higher_order_angle") == 4  # was 2 (rank 3)
-        assert math.isclose(ranking["rankings"][0]["score"], 0.733, abs_tol=5e-4)
+        # Published rank 3; rank 5 after the imputation fix; rank 4 now.
+        assert order.index("higher_order_angle") == 3
+        assert math.isclose(ranking["rankings"][0]["score"], 0.9266, abs_tol=5e-4)

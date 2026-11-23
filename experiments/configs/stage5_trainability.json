@@ -71,7 +71,8 @@
   "analysis_params": {
     "n_samples": 500,
     "input_range": [0.0, 6.283185307179586],
-    "observable": "computational"
+    "observable": "pauli_z",
+    "n_var_layers": 2
   },
   "output_dir": "experiments/results/raw/stage5_trainability"
 }

@@ -12,7 +12,7 @@ This page defines each property, explains what it measures, and provides intuiti
 |:---------|:----------------|:-----:|:-------------|
 | **Expressibility** | Hilbert space coverage | [0, +inf) | More expressive |
 | **Entanglement Capability** | Meyer-Wallach entanglement | [0, 1] | More entangled |
-| **Trainability** | Gradient variance (barren plateaus) | [0, 1] | Easier to train |
+| **Trainability** | Gradient variance of a classifier built on the encoding (barren plateaus) | [0, 1] | Easier to train |
 | **Circuit Depth** | Sequential gate layers | [1, +inf) | Deeper circuit |
 | **Gate Count** | Total quantum gates | [1, +inf) | More expensive |
 | **Simulability** | Classical simulation feasibility | Boolean | — |
@@ -57,7 +57,9 @@ This page defines each property, explains what it measures, and provides intuiti
 
 ## Trainability
 
-**What it measures:** Whether gradient-based optimisation is feasible. Specifically, it estimates the variance of parameter gradients — if gradients vanish exponentially with system size (a "barren plateau"), the encoding is effectively untrainable.
+**What it measures:** Whether gradient-based optimisation of a model *built on* the encoding is feasible. An encoding has no trainable parameters of its own — its angles are the data — so trainability is measured inside the model the atlas benchmarks: the variational classifier `VQCClassifier`, which applies the encoding, then `n_var_layers` layers of `RY(θ)` rotations and a linear CNOT chain, and reads out ⟨Z₀⟩.
+
+`estimate_trainability` reports the variance of that model's cost gradient, \( \mathrm{Var}[\partial C / \partial \theta_k] \), at random initialisation — with the data \(x\) drawn from `input_range` and \(\theta\) from \([-\pi, \pi)\), the classifier's own initialisation. If that variance vanishes exponentially with the number of qubits (a "barren plateau"), the model is effectively untrainable.
 
 ```
   High Trainability                 Low Trainability
@@ -70,6 +72,14 @@ This page defines each property, explains what it measures, and provides intuiti
     │╱      ╲    ╲                    │
     └───────────────                  └───────────────
 ```
+
+**How it's computed:** each \(\theta_k\) enters exactly one `RY` gate, so the gradient is exact. It is evaluated by the adjoint method and agrees with PennyLane's automatic differentiation of the classifier's circuit to floating-point precision. The variance is averaged over the parameters that can move the cost at all. With the ⟨Z₀⟩ read-out, only \(\theta[l, q]\) with \(q \le L - 1 - l\) lie in the observable's backward light cone — three parameters for the benchmark's two layers, at any width. The rest have identically zero gradient, and averaging them in would make the variance fall like \(1/n\) for reasons that have nothing to do with the encoding.
+
+!!! note "The classifier sees only its first qubits"
+    A consequence of that light cone: the benchmark classifier's output depends on the encoded state only through its first `n_var_layers` qubits. For a product encoding such as `AngleEncoding` on four features, features `x[2]` and `x[3]` cannot affect the prediction at all; an entangling encoding can route their information onto qubits 0 and 1.
+
+!!! warning "Changed definition"
+    Releases before this one differentiated the *data* \(x\) with a fixed \(\pm\pi/2\) shift. That shift returns a derivative only when each feature enters a single unit-frequency rotation (plain angle encoding); for the other encodings it returned no derivative at all, and a derivative with respect to data measures input sensitivity rather than trainability. The atlas's trainability column has been re-measured under the definition above.
 
 **Rule of thumb:** Shallow circuits with limited entanglement are more trainable. Deep, highly entangled circuits risk barren plateaus.
 

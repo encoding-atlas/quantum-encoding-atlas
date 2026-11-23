@@ -4,37 +4,40 @@ This script loads results from stage5_trainability/summary.json and performs
 physics-aware sanity checks:
 
 1. **Value integrity**: Trainability estimate is in [0, 1] and not NaN.
-2. **Gradient variance**: Non-negative (not NaN). Zero is accepted as a valid
-   physical result for discrete encodings and diagonal-gate architectures.
+2. **Gradient variance**: Finite and strictly positive. The measured gradient
+   is with respect to the classifier's variational angles, which every
+   encoding leaves differentiable, so a zero variance is a bug, not physics.
 3. **Risk level**: barren_plateau_risk is one of {"low", "medium", "high", "unknown"}.
-4. **Non-entangling encodings**: Continuous non-entangling encodings (product-state
-   circuits) should not exhibit barren plateaus (risk != "high"). Discrete
-   encodings (BasisEncoding) are exempt from gradient-based checks.
+4. **Non-entangling encodings**: Product-state encodings should not exhibit
+   barren plateaus (risk != "high").
 5. **Depth-trainability correlation**: Shallow circuits should generally have
    higher trainability than deep circuits (with tolerance for noise).
 6. **Per-parameter variance**: Individual parameter variances are non-negative.
-7. **Sample quality**: Sufficient successful samples for reliable estimation.
+7. **Light cone**: parameters outside ``live_parameter_mask`` have zero
+   variance, and the provenance fields (``observable``, ``n_var_layers``,
+   ``n_live_parameters``) are present and consistent.
+8. **Width invariance**: for encodings that prepare a product of per-feature
+   qubit states, the read-out sees the same two-qubit reduced state at every
+   width, so the gradient variance must not change with ``n_features``.
+9. **Sample quality**: Sufficient successful samples for reliable estimation.
 
 Physics Notes
 -------------
-- **Discrete encodings** (BasisEncoding) map continuous inputs to binary values
-  via thresholds, producing step-function circuits. The parameter-shift rule
-  is not applicable to step functions, so gradient_variance = 0 is expected.
+- **What is measured.** ``Var[∂C/∂θ]`` for the Stage 6a variational
+  classifier, ``C(x, θ) = ⟨Z₀⟩`` after ``U(x)`` and two layers of ``RY(θ)`` +
+  a linear CNOT chain, at random ``x`` and random initial ``θ``, averaged over
+  the parameters inside the read-out's light cone.
 
-- **Diagonal-gate encodings at reps=1** (IQP, ZZFeatureMap, PauliFeatureMap)
-  apply only Z-diagonal gates (Rz, ZZ) after an initial Hadamard layer. Since
-  ⟨0...0| is an eigenstate of all Z operators, the computational basis
-  probability P(0...0) = 1/2^n is constant w.r.t. input parameters, yielding
-  exactly zero gradients. At reps >= 2, a second H→diagonal layer breaks this
-  symmetry and gradients become nonzero.
+- **Light cone.** ``Z₀`` commutes with the chain's first CNOT (qubit 0 is its
+  control), so only ``θ[l, q]`` with ``q ≤ n_var_layers - 1 - l`` can move the
+  cost: three parameters at any width. The remaining entries of
+  ``per_parameter_variance`` are zero up to round-off (~1e-33).
 
-- **Trainability score scaling**: The sigmoid mapping from gradient variance to
-  trainability score [0, 1] uses a reference variance of 0.1. For product-state
-  encodings with a local observable (computational basis), gradient variance
-  naturally decreases with n_features because each gradient involves a product
-  of cos²(θ/2) factors. Expected trainability for non-entangling encodings:
-  ~0.28 at n_features=2, ~0.09 at n_features=4. These are NOT barren plateaus
-  — the gradients are healthy but small due to the product structure.
+- **No structural zeros.** Earlier releases differentiated the data ``x``
+  with a ±π/2 shift and measured ``P(0…0)``. That produced exact zeros for
+  BasisEncoding (a step function of ``x``) and for single-layer IQP/ZZ/Pauli
+  maps (``P(0…0) = 2⁻ⁿ`` for every ``x``), which this script used to exempt.
+  Neither is a barren plateau, and neither arises for ``∂C/∂θ``.
 
 Usage:
     python experiments/validate_stage5_trainability.py
@@ -108,49 +111,31 @@ ENCODING_FAMILIES: dict[str, list[str]] = {
     "Amplitude": ["amplitude"],
 }
 
-# Encodings that use discrete/binary data mapping rather than continuous
-# parameter rotations.  BasisEncoding applies X gates based on a binary
-# threshold (x_i > threshold → |1⟩, else |0⟩), producing step-function
-# circuits.  The parameter-shift rule requires smooth dependence on
-# continuous parameters and is not applicable to step functions, so
-# gradient_variance = 0 is the mathematically correct result — not a bug.
-# All gradient-based trainability checks are skipped for these encodings.
-DISCRETE_ENCODINGS: set[str] = {"basis"}
+# Encodings whose qubit q depends on feature q alone, so the read-out's
+# reduced state on qubits {0, 1} — and therefore the gradient variance — is
+# the same at every width. HigherOrderAngleEncoding is excluded: it is a
+# product state too, but its qubit angles combine features from across the
+# input, so the reduced state does depend on the width.
+WIDTH_INVARIANT_ENCODINGS: set[str] = {"angle", "basis"}
 
-# Encodings whose architecture produces exactly zero gradient variance at
-# reps=1 when measured with the computational basis observable.
-#
-# MATHEMATICAL EXPLANATION:
-# At reps=1, these encodings apply only Z-diagonal gates (Rz, ZZ) after
-# an initial Hadamard layer:
-#
-#   |ψ(x)⟩ = D(x) · H^⊗n |0⟩^⊗n
-#
-# where D(x) is diagonal in the computational basis.  When measuring
-# P(0...0) = |⟨0...0|ψ(x)⟩|², the bra ⟨0...0| is an eigenstate of all
-# Z operators, so D†(x)|0...0⟩ = e^{iφ(x)}|0...0⟩.  Therefore:
-#
-#   P(0...0) = |e^{iφ(x)} · ⟨0...0|H^⊗n|0...0⟩|² = 1/2^n
-#
-# This is CONSTANT with respect to x — the gradient is exactly zero for
-# all parameter values, not just at isolated points.  The near-zero values
-# (~1e-28 to 1e-34) observed in experiments are floating-point noise around
-# the true value of zero.
-#
-# At reps >= 2, a second Hadamard layer followed by additional diagonal
-# gates breaks this eigenstate symmetry, making P(0...0) parameter-
-# dependent and producing nonzero gradients.
-ZERO_GRADIENT_AT_REPS_1: set[str] = {"iqp", "zz_feature_map", "pauli_feature_map"}
+# Relative tolerance for the width-invariance check. The variance estimate's
+# standard error is ~σ²·√(2/(3(n-1))) ≈ 4% at 500 samples and three live
+# parameters, so 25% is a > 5σ band.
+WIDTH_INVARIANCE_RTOL: float = 0.25
+
+# Upper bound on the variance of a parameter outside the light cone. Exact
+# arithmetic gives zero; double-precision round-off gives ~1e-33.
+DEAD_PARAMETER_VARIANCE_ATOL: float = 1e-20
+
+VALID_OBSERVABLES: set[str] = {"pauli_z", "global_z", "computational"}
 
 
 # =============================================================================
 # Logging Setup
 # =============================================================================
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s: %(message)s",
-)
+# Configured in main(), so importing this module (e.g. from the test suite)
+# does not reconfigure the caller's logging.
 logger = logging.getLogger(__name__)
 
 
@@ -242,82 +227,25 @@ def validate_trainability_result(
             details={"value": trainability_estimate, "min": 0.0, "max": 1.0},
         ))
 
-    # Check 3: Gradient variance is non-negative and not NaN.
+    # Check 3: Gradient variance is finite and strictly positive.
     #
-    # Zero gradient variance is a valid physical result in several cases:
-    # - Discrete encodings (BasisEncoding): step-function circuits
-    # - Diagonal-gate encodings at reps=1: P(0...0) is parameter-independent
-    # - Genuine barren plateaus: captured separately by risk level checks
-    #
-    # We only fail on NaN or negative values, which indicate numerical bugs.
+    # The gradient is taken with respect to the classifier's RY angles, each
+    # of which enters one gate, so every live parameter has a gradient that
+    # is not identically zero for any encoding. A genuine barren plateau makes
+    # the variance small, never exactly zero; zero or NaN indicates a bug.
     if gradient_variance is not None:
-        if encoding_name in DISCRETE_ENCODINGS:
-            # Discrete encodings produce zero gradient by design (step
-            # functions have zero parameter-shift derivatives).  Report
-            # as passed with an informational message.
-            checks.append(ValidationResult(
-                check_name="gradient_variance_discrete_exempt",
-                passed=True,
-                message=(
-                    f"{encoding_name} is a discrete encoding; "
-                    f"gradient_variance={gradient_variance:.2e} "
-                    f"(zero expected, parameter-shift rule not applicable)"
-                ),
-                details={"value": gradient_variance, "reason": "discrete_encoding"},
-            ))
-        else:
-            is_nan = (
-                math.isnan(gradient_variance)
-                if isinstance(gradient_variance, float)
-                else False
-            )
-            is_non_negative = gradient_variance >= 0 if not is_nan else False
-            checks.append(ValidationResult(
-                check_name="gradient_variance_non_negative",
-                passed=not is_nan and is_non_negative,
-                message=(
-                    f"gradient_variance={gradient_variance:.6f}"
-                    if not is_nan
-                    else "gradient_variance=NaN"
-                ),
-                details={"value": gradient_variance},
-            ))
-
-            # Informational note for near-zero gradient variance in
-            # non-discrete encodings.  This flags cases where the gradient
-            # is effectively zero due to circuit architecture (known) or
-            # potential issues (unknown).
-            if not is_nan and gradient_variance < 1e-10:
-                reps = params.get("reps", params.get("n_layers", None))
-                is_known_zero_architecture = (
-                    encoding_name in ZERO_GRADIENT_AT_REPS_1
-                    and reps is not None
-                    and reps <= 1
-                )
-                if is_known_zero_architecture:
-                    reason = (
-                        "Expected: at reps=1, only Z-diagonal gates are "
-                        "applied after H layer. Since ⟨0...0| is a Z "
-                        "eigenstate, P(0...0) = 1/2^n is constant."
-                    )
-                else:
-                    reason = (
-                        "Near-zero gradient variance; may indicate a barren "
-                        "plateau or architectural constraint. See "
-                        "barren_plateau_risk for risk assessment."
-                    )
-                checks.append(ValidationResult(
-                    check_name="near_zero_gradient_info",
-                    passed=True,  # Informational, not a failure
-                    message=(
-                        f"INFO: {encoding_name} gradient_variance="
-                        f"{gradient_variance:.2e}. {reason}"
-                    ),
-                    details={
-                        "value": gradient_variance,
-                        "is_known_architecture": is_known_zero_architecture,
-                    },
-                ))
+        is_finite = isinstance(gradient_variance, (int, float)) and math.isfinite(gradient_variance)
+        is_positive = is_finite and gradient_variance > 0
+        checks.append(ValidationResult(
+            check_name="gradient_variance_positive",
+            passed=is_positive,
+            message=(
+                f"gradient_variance={gradient_variance:.6e}"
+                if is_finite
+                else f"gradient_variance={gradient_variance} (not finite)"
+            ),
+            details={"value": gradient_variance},
+        ))
 
     # Check 4: Valid barren plateau risk level
     is_valid_risk = barren_plateau_risk in VALID_RISK_LEVELS
@@ -344,49 +272,12 @@ def validate_trainability_result(
     # Check 6: Non-entangling encodings should not exhibit barren plateaus.
     #
     # PHYSICAL RATIONALE:
-    # Non-entangling encodings produce product states (no inter-qubit
-    # correlations).  Barren plateaus arise from entanglement spreading
-    # information across exponentially many degrees of freedom (McClean
-    # et al., 2018).  Product-state circuits cannot exhibit this mechanism,
-    # so barren_plateau_risk="high" would indicate a bug, not real physics.
-    #
-    # WHY NOT A FIXED TRAINABILITY THRESHOLD:
-    # The trainability score is a sigmoid of log₁₀(variance / 0.1).  For
-    # product-state encodings with a LOCAL observable (computational basis
-    # or single-qubit Z), gradient variance naturally decreases with
-    # n_features because each gradient term includes a product of
-    # cos²(θⱼ/2) factors from unaffected qubits:
-    #
-    #   ∂P(0...0)/∂θᵢ = -½sin(θᵢ) · ∏ⱼ≠ᵢ cos²(θⱼ/2)
-    #
-    # Expected gradient variance and trainability scores:
-    #   n_features=2: variance ≈ 0.03,  trainability ≈ 0.28
-    #   n_features=4: variance ≈ 0.007, trainability ≈ 0.09
-    #   n_features=8: variance ≈ 0.002, trainability ≈ 0.04
-    #
-    # A fixed threshold (e.g., 0.6) would fail at n_features >= 3
-    # despite perfectly healthy gradients.  The correct invariant is
-    # absence of barren plateaus, captured by the risk level.
+    # A non-entangling encoding hands the read-out a product state. The
+    # read-out's light cone covers qubits {0, 1} only, so the cost depends on
+    # a two-qubit product state whatever the width, and its gradient variance
+    # cannot decay with n. A "high" risk here would indicate a bug.
     if encoding_name in NON_ENTANGLING_ENCODINGS and trainability_estimate is not None:
-        if encoding_name in DISCRETE_ENCODINGS:
-            # Discrete encodings are exempt from gradient-based trainability
-            # checks entirely.  BasisEncoding's zero gradient is a property
-            # of its step-function structure, not a barren plateau.
-            checks.append(ValidationResult(
-                check_name="non_entangling_discrete_exempt",
-                passed=True,
-                message=(
-                    f"{encoding_name} is discrete; gradient-based "
-                    f"trainability check not applicable "
-                    f"(trainability={trainability_estimate:.4f})"
-                ),
-                details={
-                    "encoding": encoding_name,
-                    "reason": "discrete_encoding",
-                    "trainability": trainability_estimate,
-                },
-            ))
-        elif not math.isnan(trainability_estimate):
+        if not math.isnan(trainability_estimate):
             is_not_high_risk = barren_plateau_risk != "high"
             checks.append(ValidationResult(
                 check_name="non_entangling_no_barren_plateau",
@@ -404,26 +295,31 @@ def validate_trainability_result(
                 },
             ))
 
-    # Check 7: Per-parameter variance values are positive
+    # Check 7: Per-parameter variance values are finite and non-negative
     if per_parameter_variance:
-        all_positive = True
-        invalid_indices = []
-        for i, val in enumerate(per_parameter_variance):
-            if val is None or (isinstance(val, float) and (math.isnan(val) or val < 0)):
-                all_positive = False
-                invalid_indices.append(i)
-
+        invalid_indices = [
+            i
+            for i, val in enumerate(per_parameter_variance)
+            if not isinstance(val, (int, float)) or not math.isfinite(val) or val < 0
+        ]
         checks.append(ValidationResult(
-            check_name="per_param_variance_positive",
-            passed=all_positive,
-            message=f"per_parameter_variance {'all positive' if all_positive else f'invalid at {invalid_indices}'}",
+            check_name="per_param_variance_non_negative",
+            passed=not invalid_indices,
+            message=(
+                "per_parameter_variance all finite and non-negative"
+                if not invalid_indices
+                else f"per_parameter_variance invalid at {invalid_indices}"
+            ),
             details={
                 "n_params": len(per_parameter_variance),
                 "invalid_indices": invalid_indices,
             },
         ))
 
-    # Check 8: n_successful_samples is reasonable
+    # Check 8: Provenance and light cone.
+    checks.extend(_validate_light_cone(result))
+
+    # Check 9: n_successful_samples is reasonable
     if n_successful_samples is not None:
         is_reasonable = n_successful_samples >= 10  # At least some samples succeeded
         checks.append(ValidationResult(
@@ -435,8 +331,78 @@ def validate_trainability_result(
     return EncodingValidation(encoding_name, params, checks)
 
 
+def _validate_light_cone(result: dict[str, Any]) -> list[ValidationResult]:
+    """Check the provenance fields and that dead parameters really are dead."""
+    observable = result.get("observable")
+    n_var_layers = result.get("n_var_layers")
+    mask = result.get("live_parameter_mask")
+    n_live = result.get("n_live_parameters")
+    variances = result.get("per_parameter_variance")
+
+    missing = [
+        name
+        for name, value in (
+            ("observable", observable),
+            ("n_var_layers", n_var_layers),
+            ("live_parameter_mask", mask),
+            ("n_live_parameters", n_live),
+            ("per_parameter_variance", variances),
+        )
+        if value is None
+    ]
+    if missing:
+        return [ValidationResult(
+            check_name="provenance_present",
+            passed=False,
+            message=f"result lacks {missing}; was it produced before the θ-gradient definition?",
+        )]
+
+    assert isinstance(mask, list) and isinstance(variances, list)
+    assert isinstance(n_var_layers, int)
+    consistent = (
+        observable in VALID_OBSERVABLES
+        and n_var_layers >= 1
+        and len(mask) == len(variances)
+        and len(mask) % n_var_layers == 0
+        and n_live == sum(bool(m) for m in mask)
+        and n_live >= 1
+    )
+    checks = [ValidationResult(
+        check_name="provenance_consistent",
+        passed=consistent,
+        message=(
+            f"observable={observable!r}, n_var_layers={n_var_layers}, "
+            f"n_live_parameters={n_live} of {len(mask)}"
+        ),
+    )]
+    if consistent:
+        dead = [v for v, live in zip(variances, mask) if not live]
+        worst = max(dead, default=0.0)
+        checks.append(ValidationResult(
+            check_name="dead_parameters_have_zero_variance",
+            passed=worst <= DEAD_PARAMETER_VARIANCE_ATOL,
+            message=(
+                f"max variance outside the light cone = {worst:.2e} "
+                f"(<= {DEAD_PARAMETER_VARIANCE_ATOL:.0e})"
+            ),
+            details={"max_dead_variance": worst, "n_dead": len(dead)},
+        ))
+    return checks
+
+
+def _depth_parameter(params: dict[str, Any]) -> int | None:
+    """The repetition count that sets an encoding's depth, if it has one."""
+    for key in ("reps", "n_layers"):
+        if key in params:
+            return int(params[key])
+    return None
+
+
 def validate_depth_trainability_correlation(results: list[dict[str, Any]]) -> list[ValidationResult]:
     """Validate that shallow circuits have higher trainability than deep circuits.
+
+    Compares configurations of one encoding that differ only in their
+    repetition count (``reps`` or ``n_layers``) at a fixed ``n_features``.
 
     Parameters
     ----------
@@ -461,46 +427,86 @@ def validate_depth_trainability_correlation(results: list[dict[str, Any]]) -> li
         params = entry.get("encoding_params", {})
         result = entry.get("result", {})
 
-        reps = params.get("reps", 1)
-        n_features = params.get("n_features", 4)
+        depth = _depth_parameter(params)
         trainability = result.get("trainability_estimate")
+        if depth is None or trainability is None or math.isnan(trainability):
+            continue
+        grouped[(enc_name, params.get("n_features", 4))].append((depth, trainability))
 
-        if trainability is not None:
-            if not math.isnan(trainability):
-                key = (enc_name, n_features)
-                grouped[key].append((reps, trainability))
-
-    # For each encoding, check if trainability decreases with reps (depth)
+    # For each encoding, check if trainability decreases with depth
     for (enc_name, n_features), values in grouped.items():
         if len(values) < 2:
             continue
 
-        # Sort by reps
         values.sort(key=lambda x: x[0])
-        reps_list = [v[0] for v in values]
+        depth_list = [v[0] for v in values]
         train_list = [v[1] for v in values]
 
-        # Check if generally decreasing (allow some noise)
-        # Trainability often decreases with depth due to barren plateaus
-        reasonable = True
-        for i in range(1, len(train_list)):
-            # Allow increases up to 0.2 (some noise is expected)
-            if train_list[i] > train_list[i-1] + 0.3:
-                reasonable = False
-                break
+        # Allow increases up to 0.3 (some noise is expected)
+        reasonable = all(
+            train_list[i] <= train_list[i - 1] + 0.3 for i in range(1, len(train_list))
+        )
 
         checks.append(ValidationResult(
             check_name=f"depth_correlation_{enc_name}_n{n_features}",
             passed=reasonable,
-            message=f"{enc_name}(n={n_features}): reps={reps_list} -> train={[f'{t:.3f}' for t in train_list]}",
+            message=f"{enc_name}(n={n_features}): reps={depth_list} -> train={[f'{t:.3f}' for t in train_list]}",
             details={
                 "encoding": enc_name,
                 "n_features": n_features,
-                "reps": reps_list,
+                "reps": depth_list,
                 "trainability": train_list,
             },
         ))
 
+    return checks
+
+
+def validate_width_invariance(results: list[dict[str, Any]]) -> list[ValidationResult]:
+    """Product-of-feature-state encodings must not change with width.
+
+    For :data:`WIDTH_INVARIANT_ENCODINGS` the read-out sees the same reduced
+    state on qubits {0, 1} at every ``n_features``, so the gradient variance
+    may differ between widths only by sampling noise. A systematic decay
+    would mean the estimator averages over parameters outside the light cone.
+
+    Parameters
+    ----------
+    results : list[dict]
+        All results from summary.json.
+
+    Returns
+    -------
+    list[ValidationResult]
+        One check per width-invariant encoding with at least two widths.
+    """
+    by_encoding: dict[str, dict[int, float]] = defaultdict(dict)
+    for entry in results:
+        if entry.get("status") != "success":
+            continue
+        name = entry.get("encoding_name", "unknown")
+        if name not in WIDTH_INVARIANT_ENCODINGS:
+            continue
+        gv = entry.get("result", {}).get("gradient_variance")
+        if gv is not None:
+            by_encoding[name][int(entry.get("encoding_params", {}).get("n_features", 4))] = float(gv)
+
+    checks: list[ValidationResult] = []
+    for name, by_width in sorted(by_encoding.items()):
+        if len(by_width) < 2:
+            continue
+        lo, hi = min(by_width.values()), max(by_width.values())
+        spread = (hi - lo) / hi if hi > 0 else float("inf")
+        checks.append(ValidationResult(
+            check_name=f"width_invariance_{name}",
+            passed=spread <= WIDTH_INVARIANCE_RTOL,
+            message=(
+                f"{name}: gradient_variance by width "
+                f"{ {w: round(v, 4) for w, v in sorted(by_width.items())} } "
+                f"(relative spread {spread:.1%}, tolerance {WIDTH_INVARIANCE_RTOL:.0%})"
+            ),
+            details={"by_width": by_width, "relative_spread": spread},
+        ))
     return checks
 
 
@@ -773,6 +779,9 @@ def run_validation(results_path: str) -> tuple[int, int, list[EncodingValidation
     depth_checks = validate_depth_trainability_correlation(results)
     global_checks.extend(depth_checks)
 
+    # Check width invariance of product-of-feature-state encodings
+    global_checks.extend(validate_width_invariance(results))
+
     # Add global checks to a synthetic validation
     if global_checks:
         global_validation = EncodingValidation("_global_checks_", {}, global_checks)
@@ -886,6 +895,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 

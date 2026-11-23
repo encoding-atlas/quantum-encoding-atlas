@@ -536,7 +536,14 @@ def verify_7_7(profiles: dict, saved: dict, suite: VerificationSuite) -> None:
 
 
 def verify_7_9(profiles: dict, saved: dict, suite: VerificationSuite) -> None:
-    """Verify 7.9: Final ranking — independent weighted-score computation."""
+    """Verify 7.9: Final ranking — independent weighted-score computation.
+
+    Implements the missing-metric policy of ``encoding_atlas.benchmark.scoring``
+    independently: a non-entangling encoding's entanglement capability is a
+    structural zero — it counts as 0 and takes part in normalisation — while a
+    metric that was never measured is skipped and the remaining weights
+    renormalised. Ties at 12 decimal places are broken by name.
+    """
     suite.section("7.9 Final Ranking (weighted scores)")
 
     result = saved.get("7.9", {})
@@ -557,13 +564,16 @@ def verify_7_9(profiles: dict, saved: dict, suite: VerificationSuite) -> None:
         mean_acc = float(np.mean(list(vqc_acc.values())))
         depth = p.get("depth")
         inv_depth = 1.0 / float(depth) if depth and depth > 0 else None
+        entanglement = p.get("entanglement_capability")
+        if entanglement is None and p.get("is_entangling") is False:
+            entanglement = 0.0  # no entangling gates: exactly zero, not unknown
         names.append(name)
         raw_metrics.append({
             "accuracy": mean_acc,
             "expressibility": p.get("expressibility"),
             "trainability": p.get("trainability_estimate"),
             "inv_depth": inv_depth,
-            "entanglement": p.get("entanglement_capability"),
+            "entanglement": entanglement,
             "noise_resilience": p.get("noise_resilience"),
         })
 
@@ -604,9 +614,12 @@ def verify_7_9(profiles: dict, saved: dict, suite: VerificationSuite) -> None:
     matched = 0
     for name, recomp_score in recomputed_scores.items():
         if name in saved_scores:
+            # Stage 7 stores scores rounded to 4 decimals: allow half a unit
+            # in the last stored place, plus floating-point slack.
             suite.check_close(
                 f"{name} score",
                 saved_scores[name], recomp_score,
+                atol=5e-5 + 1e-12, rtol=0.0,
             )
             matched += 1
         if matched >= 5:
@@ -616,8 +629,7 @@ def verify_7_9(profiles: dict, saved: dict, suite: VerificationSuite) -> None:
     saved_order = [r["encoding"] for r in saved_rankings]
     recomputed_order = sorted(
         recomputed_scores.keys(),
-        key=lambda n: recomputed_scores[n],
-        reverse=True,
+        key=lambda n: (-round(recomputed_scores[n], 12), n),
     )
 
     # Top-3 order match

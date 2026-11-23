@@ -56,9 +56,12 @@ EXPECTED_CANONICAL_NAMES = frozenset(
         "swap_equivariant",
     }
 )
-EXPECTED_PARETO = frozenset(
-    {"angle", "basis", "higher_order_angle", "swap_equivariant"}
-)
+# Previously {"angle", "basis", "higher_order_angle", "swap_equivariant"}: that
+# front was computed from depths and trainabilities of circuits other than the
+# benchmarked ones, and from a trainability column that was not a derivative.
+# With every objective taken from the benchmarked circuit, angle is at least as
+# good as every other encoding on all four objectives.
+EXPECTED_PARETO = frozenset({"angle"})
 
 
 # =========================================================================
@@ -94,7 +97,9 @@ class TestEncodingProfile:
     def test_metric_returns_value(self) -> None:
         angle = get_encoding_profile("angle")
         assert angle.metric("kernel_accuracy") == pytest.approx(0.9581781795935266)
-        assert angle.metric("depth") == 2
+        # The benchmarked AngleEncoding(rotation="Y") has reps=1: one layer of
+        # rotations. The atlas used to report 2, the depth of reps=2.
+        assert angle.metric("depth") == 1
 
     def test_metric_default_for_missing_key(self) -> None:
         angle = get_encoding_profile("angle")

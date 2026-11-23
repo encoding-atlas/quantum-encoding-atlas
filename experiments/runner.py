@@ -594,7 +594,13 @@ def _handle_trainability(
     config: ExperimentConfig,
     seed: int,
 ) -> dict[str, Any]:
-    """Stage handler: trainability via gradient variance analysis."""
+    """Stage handler: trainability via gradient variance analysis.
+
+    Measures ``Var[∂C/∂θ]`` of the Stage 6a variational classifier built on
+    the encoding. ``n_var_layers`` and ``observable`` default to that
+    classifier's own architecture and read-out, so the trainability column
+    describes the model whose accuracy the atlas reports.
+    """
     from encoding_atlas.analysis import estimate_trainability
 
     ap = config.analysis_params
@@ -602,19 +608,22 @@ def _handle_trainability(
         encoding,
         n_samples=ap.get("n_samples", 500),
         input_range=tuple(ap.get("input_range", (0.0, 6.283185307179586))),
-        observable=ap.get("observable", "computational"),
+        observable=ap.get("observable", "pauli_z"),
         seed=seed,
         backend=config.backend,
         return_details=True,
         verbose=False,
+        n_var_layers=ap.get("n_var_layers", 2),
     )
 
     result: dict[str, Any] = dict(train_result)
     result["encoding_name"] = type(encoding).__name__
 
-    # Convert numpy arrays to lists for JSON serialization.
-    if "per_parameter_variance" in result and hasattr(result["per_parameter_variance"], "tolist"):
-        result["per_parameter_variance"] = result["per_parameter_variance"].tolist()
+    # Convert numpy arrays (per-parameter variances, live-parameter mask) to
+    # lists for JSON serialization.
+    for key in ("per_parameter_variance", "live_parameter_mask"):
+        if key in result and hasattr(result[key], "tolist"):
+            result[key] = result[key].tolist()
 
     return result
 

@@ -8,8 +8,9 @@ trainability pipeline:
 * ``_local_z_expectation_from_state`` — the ``⟨Z₀⟩`` reducer, formerly a
   ``for i in range(2**n)`` Python loop.
 * ``_expectations_batch`` — a vectorised per-row evaluator for every
-  supported observable, used by both ``compute_all_parameter_gradients``
-  and the trainability inner loop.
+  supported observable, used by ``compute_all_parameter_gradients``.
+  (Trainability no longer differentiates the encoding's inputs; its exact
+  variational gradients live in ``analysis._variational``.)
 
 The tests below pin three things:
 
@@ -306,7 +307,7 @@ class TestExpectationsBatch:
 
 
 # =============================================================================
-# compute_all_parameter_gradients (batched parameter-shift)
+# compute_all_parameter_gradients (batched central differences)
 # =============================================================================
 
 

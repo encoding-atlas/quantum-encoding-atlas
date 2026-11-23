@@ -11,6 +11,8 @@ The master entry point is :func:`run_tradeoff_analysis`, called by the
 
 from __future__ import annotations
 
+import functools
+import inspect
 import json
 import logging
 import os
@@ -93,7 +95,6 @@ SYMMETRY_MATCHING: dict[str, list[str]] = {
 }
 
 DEFAULT_N_FEATURES = 4
-DEFAULT_REPS = 2
 MIN_SAMPLES_FOR_TEST = 5
 
 # Matched pairs for H3 (data re-uploading advantage)
@@ -169,40 +170,285 @@ def load_stage_results(stage_dir: str) -> list[dict[str, Any]]:
     return [r for r in data.get("results", []) if r.get("status") == "success"]
 
 
-def _find_default_config_result(
-    results: list[dict[str, Any]],
-    encoding_reg_name: str,
-    n_features: int = 4,
-) -> dict[str, Any] | None:
-    """Find the result entry matching the canonical config for an encoding.
+# ── Configuration Identity ─────────────────────────────────────────
+#
+# Stages 1-5 sweep each encoding over several configurations at the same
+# feature count (``reps``, ``order``, ``n_layers``, ``entanglement``, ...).
+# A metric is only meaningful next to another metric *of the same circuit*,
+# so every join in this module is keyed on the full constructor
+# configuration: the parameters a stage recorded, completed with the
+# constructor's defaults for any parameter the stage left implicit. (Stage 1
+# records ``entanglement`` for IQP; Stage 5 does not, and builds the default.)
+#
+# Keying on ``n_features`` alone — as this module previously did — let the
+# last configuration written at each width win. Depth and gradient variance
+# could then come from different circuits, and the per-encoding headline
+# metrics from a circuit other than the one whose accuracy is reported.
 
-    Selection priority:
-    1. Exact match on encoding_name and n_features
-    2. For SO2Equivariant: accept n_features=2
-    3. If multiple configs match, prefer reps=2 or n_layers=2
+WIDTH_PARAM = "n_features"
+
+
+@functools.lru_cache(maxsize=None)
+def _constructor_defaults(registry_name: str) -> tuple[tuple[str, Any], ...]:
+    """Keyword defaults of the encoding's constructor, as sorted pairs.
+
+    Returns an empty tuple for names outside the encoding registry (e.g.
+    classical baselines), whose parameters are then compared as recorded.
     """
-    candidates = []
-    for r in results:
-        if canonicalize_encoding_name(r["encoding_name"]) != encoding_reg_name:
+    import encoding_atlas  # noqa: F401 - populates the registry
+    from encoding_atlas.core.registry import _ENCODING_REGISTRY
+
+    cls = _ENCODING_REGISTRY.get(registry_name)
+    if cls is None:
+        return ()
+    signature = inspect.signature(cls.__init__)
+    return tuple(
+        sorted(
+            (name, param.default)
+            for name, param in signature.parameters.items()
+            if name != "self"
+            and param.kind not in (param.VAR_POSITIONAL, param.VAR_KEYWORD)
+            and param.default is not inspect.Parameter.empty
+        )
+    )
+
+
+def resolve_encoding_params(
+    registry_name: str, params: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the complete constructor configuration for ``params``.
+
+    Explicit parameters override the constructor's defaults, so two records
+    describe the same circuit exactly when their resolved configurations are
+    equal.
+
+    Parameters
+    ----------
+    registry_name : str
+        Canonical (registry) encoding name.
+    params : dict[str, Any]
+        Parameters as recorded by a stage.
+
+    Returns
+    -------
+    dict[str, Any]
+        Defaults updated with ``params``.
+    """
+    resolved = dict(_constructor_defaults(registry_name))
+    resolved.update(params)
+    return resolved
+
+
+def config_key(
+    registry_name: str,
+    params: dict[str, Any],
+    *,
+    drop: tuple[str, ...] = (),
+) -> str:
+    """Canonical, hashable identity of a circuit configuration.
+
+    Parameters
+    ----------
+    registry_name : str
+        Canonical (registry) encoding name.
+    params : dict[str, Any]
+        Parameters as recorded by a stage.
+    drop : tuple of str
+        Parameters to leave out, e.g. ``("n_features",)`` to identify a
+        configuration family across widths.
+
+    Returns
+    -------
+    str
+        JSON of the resolved configuration with sorted keys. Lists and tuples
+        serialise identically, so JSON round-trips do not change the key.
+    """
+    resolved = resolve_encoding_params(registry_name, params)
+    for name in drop:
+        resolved.pop(name, None)
+    return json.dumps(resolved, sort_keys=True, default=repr)
+
+
+def _is_classical_baseline(name: str) -> bool:
+    """Stage 6a stores classical baselines alongside the encodings."""
+    return name.startswith("classical_")
+
+
+def _record_width(record: dict[str, Any]) -> int:
+    """Feature count of a stage record (encodings default to 4 features)."""
+    return int(record.get("encoding_params", {}).get(WIDTH_PARAM, DEFAULT_N_FEATURES))
+
+
+def benchmarked_configurations(stage_dirs: dict[str, str]) -> dict[str, str]:
+    """Return each encoding's benchmarked configuration family.
+
+    The anchor for every per-encoding metric is the circuit whose accuracy
+    the atlas reports — the configuration Stages 6a/6b ran, which differs
+    between encodings only in ``n_features``.
+
+    Parameters
+    ----------
+    stage_dirs : dict[str, str]
+        Mapping from stage key to directory path. Reads ``"vqc"`` and
+        ``"kernel"`` when present.
+
+    Returns
+    -------
+    dict[str, str]
+        Canonical encoding name to :func:`config_key` with ``n_features``
+        dropped. Encodings absent from both stages are absent here.
+
+    Raises
+    ------
+    ValueError
+        If an encoding was benchmarked at more than one configuration family,
+        because accuracy would then belong to no single circuit.
+    """
+    families: dict[str, set[str]] = {}
+    for stage in ("vqc", "kernel"):
+        if stage not in stage_dirs:
             continue
-        params = r.get("encoding_params", {})
-        nf = params.get("n_features", n_features)
-        if nf == n_features:
-            candidates.append(r)
-        elif encoding_reg_name == "so2_equivariant" and nf == 2:
-            candidates.append(r)
+        for record in load_stage_results(stage_dirs[stage]):
+            if _is_classical_baseline(record["encoding_name"]):
+                continue
+            reg = canonicalize_encoding_name(record["encoding_name"])
+            families.setdefault(reg, set()).add(
+                config_key(reg, record.get("encoding_params", {}), drop=(WIDTH_PARAM,))
+            )
 
-    if not candidates:
+    ambiguous = {reg: sorted(keys) for reg, keys in families.items() if len(keys) > 1}
+    if ambiguous:
+        raise ValueError(
+            "Stages 6a/6b benchmark these encodings at more than one "
+            f"configuration, so their accuracy belongs to no single circuit: {ambiguous}"
+        )
+    return {reg: next(iter(keys)) for reg, keys in families.items()}
+
+
+def _benchmark_records(
+    results: list[dict[str, Any]],
+    registry_name: str,
+    family_key: str | None,
+) -> list[dict[str, Any]]:
+    """Records of ``registry_name`` belonging to the benchmarked family."""
+    if family_key is None:
+        return []
+    return [
+        r
+        for r in results
+        if not _is_classical_baseline(r["encoding_name"])
+        and canonicalize_encoding_name(r["encoding_name"]) == registry_name
+        and config_key(registry_name, r.get("encoding_params", {}), drop=(WIDTH_PARAM,))
+        == family_key
+    ]
+
+
+def _select_benchmark_result(
+    results: list[dict[str, Any]],
+    registry_name: str,
+    family_key: str | None,
+    n_features: int,
+) -> dict[str, Any] | None:
+    """The record for exactly the benchmarked circuit at ``n_features``.
+
+    Returns ``None`` when the stage never measured that circuit, so a missing
+    measurement stays visible instead of being filled from a neighbouring
+    configuration.
+
+    Raises
+    ------
+    ValueError
+        If the stage holds two records for the same circuit with different
+        results.
+    """
+    matches = [
+        r
+        for r in _benchmark_records(results, registry_name, family_key)
+        if _record_width(r) == n_features
+    ]
+    if not matches:
         return None
-    if len(candidates) == 1:
-        return candidates[0]
+    first = matches[0].get("result", {})
+    for other in matches[1:]:
+        if other.get("result", {}) != first:
+            raise ValueError(
+                f"Two different results for the same {registry_name} circuit "
+                f"(n_features={n_features}): {other.get('encoding_params')}"
+            )
+    return matches[0]
 
-    # Prefer reps=2 or n_layers=2 (the default config from stage6a)
-    for c in candidates:
-        params = c.get("encoding_params", {})
-        if params.get("reps") == DEFAULT_REPS or params.get("n_layers") == DEFAULT_REPS:
-            return c
-    return candidates[0]
+
+def _benchmark_scaling(
+    results: list[dict[str, Any]],
+    registry_name: str,
+    family_key: str | None,
+    metric: str,
+) -> dict[int, float] | None:
+    """``metric`` across widths for the benchmarked configuration family.
+
+    Only the width varies between the returned points, so the curve describes
+    one circuit family. Returns ``None`` unless at least two widths were
+    measured.
+    """
+    values: dict[int, float] = {}
+    for r in _benchmark_records(results, registry_name, family_key):
+        value = r.get("result", {}).get(metric)
+        if value is None:
+            continue
+        width = _record_width(r)
+        if width in values and values[width] != float(value):
+            raise ValueError(
+                f"Two different {metric} values for the same {registry_name} "
+                f"circuit (n_features={width})."
+            )
+        values[width] = float(value)
+    return values if len(values) > 1 else None
+
+
+def build_trainability_records(
+    resources: list[dict[str, Any]],
+    trainability: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Pair each Stage 5 measurement with the Stage 1 depth of the same circuit.
+
+    Parameters
+    ----------
+    resources : list[dict[str, Any]]
+        Successful Stage 1 records.
+    trainability : list[dict[str, Any]]
+        Successful Stage 5 records.
+
+    Returns
+    -------
+    dict[str, list[dict[str, Any]]]
+        Per canonical encoding name, one record per measured circuit with keys
+        ``config`` (the resolved configuration), ``n_features``, ``depth``,
+        ``gradient_variance`` and ``trainability_estimate``. Stage 5
+        configurations without a Stage 1 depth are left out.
+    """
+    depth_by_key: dict[str, int] = {}
+    for r in resources:
+        reg = canonicalize_encoding_name(r["encoding_name"])
+        depth = r.get("result", {}).get("depth")
+        if depth is not None:
+            depth_by_key[config_key(reg, r.get("encoding_params", {}))] = int(depth)
+
+    records: dict[str, list[dict[str, Any]]] = {}
+    for r in trainability:
+        reg = canonicalize_encoding_name(r["encoding_name"])
+        params = r.get("encoding_params", {})
+        depth = depth_by_key.get(config_key(reg, params))
+        res = r.get("result", {})
+        if depth is None or res.get("gradient_variance") is None:
+            continue
+        records.setdefault(reg, []).append({
+            "config": resolve_encoding_params(reg, params),
+            "n_features": _record_width(r),
+            "depth": depth,
+            "gradient_variance": float(res["gradient_variance"]),
+            "trainability_estimate": res.get("trainability_estimate"),
+        })
+    return records
 
 
 def _extract_fold_accuracies(dataset_result: dict[str, Any]) -> list[float]:
@@ -220,6 +466,13 @@ def build_encoding_profiles(
     stage_dirs: dict[str, str],
 ) -> dict[str, dict[str, Any]]:
     """Build a per-encoding profile by joining results from all stages.
+
+    Every per-encoding metric is taken from the circuit Stages 6a/6b
+    benchmarked (see :func:`benchmarked_configurations`), at
+    ``n_features_used`` features. Scaling curves hold that configuration
+    family fixed and vary only the width. A stage that never measured the
+    benchmarked circuit leaves the metric ``None`` rather than borrowing a
+    neighbouring configuration's value.
 
     Parameters
     ----------
@@ -267,30 +520,34 @@ def build_encoding_profiles(
             "entanglement_scaling": None,
             "trainability_scaling": None,
             "depth_scaling": None,
+            "trainability_records": None,
         }
 
+    anchors = benchmarked_configurations(stage_dirs)
+    unanchored = sorted(set(profiles) - set(anchors))
+    if unanchored:
+        logger.warning(
+            "No Stage 6 benchmark configuration for %s; their per-encoding "
+            "metrics are left unset.",
+            unanchored,
+        )
+
+    def headline(results: list[dict[str, Any]], reg: str) -> dict[str, Any] | None:
+        return _select_benchmark_result(
+            results, reg, anchors.get(reg), profiles[reg]["n_features_used"]
+        )
+
     # Stage 1: Resources
+    resources: list[dict[str, Any]] = []
     if "resources" in stage_dirs:
-        results = load_stage_results(stage_dirs["resources"])
-        # Build scaling data for all configs
-        scaling_depth: dict[str, dict[int, int]] = {}
-        for r in results:
-            reg = canonicalize_encoding_name(r["encoding_name"])
-            if reg not in profiles:
-                continue
-            params = r.get("encoding_params", {})
-            nf = params.get("n_features", DEFAULT_N_FEATURES)
-            res = r.get("result", {})
-            scaling_depth.setdefault(reg, {})[nf] = res.get("depth", 0)
-
-        for reg, scale_data in scaling_depth.items():
-            if len(scale_data) > 1:
-                profiles[reg]["depth_scaling"] = scale_data
-
+        resources = load_stage_results(stage_dirs["resources"])
         for reg in profiles:
-            default_result = _find_default_config_result(results, reg)
-            if default_result:
-                res = default_result.get("result", {})
+            profiles[reg]["depth_scaling"] = _benchmark_scaling(
+                resources, reg, anchors.get(reg), "depth"
+            )
+            record = headline(resources, reg)
+            if record:
+                res = record.get("result", {})
                 profiles[reg]["depth"] = res.get("depth")
                 profiles[reg]["gate_count"] = res.get("gate_count")
                 profiles[reg]["two_qubit_gates"] = res.get("two_qubit_gates")
@@ -299,106 +556,74 @@ def build_encoding_profiles(
     # Stage 2: Simulability
     if "simulability" in stage_dirs:
         results = load_stage_results(stage_dirs["simulability"])
-        for r in results:
-            reg = canonicalize_encoding_name(r["encoding_name"])
-            if reg not in profiles:
-                continue
-            res = r.get("result", {})
-            profiles[reg]["simulability_class"] = res.get("simulability_class")
-            profiles[reg]["is_simulable"] = res.get("is_simulable")
+        for reg in profiles:
+            record = headline(results, reg)
+            if record:
+                res = record.get("result", {})
+                profiles[reg]["simulability_class"] = res.get("simulability_class")
+                profiles[reg]["is_simulable"] = res.get("is_simulable")
 
     # Stage 3: Expressibility
     if "expressibility" in stage_dirs:
         results = load_stage_results(stage_dirs["expressibility"])
-        scaling_expr: dict[str, dict[int, float]] = {}
-        for r in results:
-            reg = canonicalize_encoding_name(r["encoding_name"])
-            if reg not in profiles:
-                continue
-            params = r.get("encoding_params", {})
-            nf = params.get("n_features", DEFAULT_N_FEATURES)
-            res = r.get("result", {})
-            expr_val = res.get("expressibility")
-            if expr_val is not None:
-                scaling_expr.setdefault(reg, {})[nf] = float(expr_val)
-
-        for reg, scale_data in scaling_expr.items():
-            if len(scale_data) > 1:
-                profiles[reg]["expressibility_scaling"] = scale_data
-
         for reg in profiles:
-            default_result = _find_default_config_result(results, reg)
-            if default_result:
-                res = default_result.get("result", {})
-                profiles[reg]["expressibility"] = res.get("expressibility")
+            profiles[reg]["expressibility_scaling"] = _benchmark_scaling(
+                results, reg, anchors.get(reg), "expressibility"
+            )
+            record = headline(results, reg)
+            if record:
+                profiles[reg]["expressibility"] = record.get("result", {}).get(
+                    "expressibility"
+                )
 
     # Stage 4: Entanglement
     if "entanglement" in stage_dirs:
         results = load_stage_results(stage_dirs["entanglement"])
-        scaling_ent: dict[str, dict[int, float]] = {}
-        for r in results:
-            reg = canonicalize_encoding_name(r["encoding_name"])
-            if reg not in profiles:
-                continue
-            params = r.get("encoding_params", {})
-            nf = params.get("n_features", DEFAULT_N_FEATURES)
-            res = r.get("result", {})
-            ent_val = res.get("entanglement_capability")
-            if ent_val is not None:
-                scaling_ent.setdefault(reg, {})[nf] = float(ent_val)
-
-        for reg, scale_data in scaling_ent.items():
-            if len(scale_data) > 1:
-                profiles[reg]["entanglement_scaling"] = scale_data
-
         for reg in profiles:
-            default_result = _find_default_config_result(results, reg)
-            if default_result:
-                res = default_result.get("result", {})
-                profiles[reg]["entanglement_capability"] = res.get("entanglement_capability")
+            profiles[reg]["entanglement_scaling"] = _benchmark_scaling(
+                results, reg, anchors.get(reg), "entanglement_capability"
+            )
+            record = headline(results, reg)
+            if record:
+                profiles[reg]["entanglement_capability"] = record.get(
+                    "result", {}
+                ).get("entanglement_capability")
 
     # Stage 5: Trainability
     if "trainability" in stage_dirs:
         results = load_stage_results(stage_dirs["trainability"])
-        scaling_train: dict[str, dict[int, float]] = {}
-        for r in results:
-            reg = canonicalize_encoding_name(r["encoding_name"])
-            if reg not in profiles:
-                continue
-            params = r.get("encoding_params", {})
-            nf = params.get("n_features", DEFAULT_N_FEATURES)
-            res = r.get("result", {})
-            gv = res.get("gradient_variance")
-            if gv is not None:
-                scaling_train.setdefault(reg, {})[nf] = float(gv)
-
-        for reg, scale_data in scaling_train.items():
-            if len(scale_data) > 1:
-                profiles[reg]["trainability_scaling"] = scale_data
-
         for reg in profiles:
-            default_result = _find_default_config_result(results, reg)
-            if default_result:
-                res = default_result.get("result", {})
+            profiles[reg]["trainability_scaling"] = _benchmark_scaling(
+                results, reg, anchors.get(reg), "gradient_variance"
+            )
+            record = headline(results, reg)
+            if record:
+                res = record.get("result", {})
                 profiles[reg]["trainability_estimate"] = res.get("trainability_estimate")
                 profiles[reg]["gradient_variance"] = res.get("gradient_variance")
                 profiles[reg]["barren_plateau_risk"] = res.get("barren_plateau_risk")
+        # H4 pairs depth with gradient variance across *every* measured
+        # configuration, so it joins on the full configuration, width
+        # included — never on width alone.
+        if resources:
+            for reg, records in build_trainability_records(resources, results).items():
+                if reg in profiles:
+                    profiles[reg]["trainability_records"] = records
 
     # Stage 5b: Noise
     if "noise" in stage_dirs:
         results = load_stage_results(stage_dirs["noise"])
-        for r in results:
-            reg = canonicalize_encoding_name(r["encoding_name"])
-            if reg not in profiles:
-                continue
-            res = r.get("result", {})
-            fid_decay = res.get("noisy_medium_fidelity_decay")
-            expr_change = res.get("noisy_medium_expressibility_change")
-            profiles[reg]["noisy_medium_fidelity_decay"] = fid_decay
-            if expr_change is not None:
-                profiles[reg]["noise_resilience"] = 1.0 - float(expr_change)
-            else:
-                profiles[reg]["noise_resilience"] = None
+        for reg in profiles:
+            record = headline(results, reg)
+            if record:
+                res = record.get("result", {})
+                profiles[reg]["noisy_medium_fidelity_decay"] = res.get(
+                    "noisy_medium_fidelity_decay"
+                )
+                expr_change = res.get("noisy_medium_expressibility_change")
+                profiles[reg]["noise_resilience"] = (
+                    1.0 - float(expr_change) if expr_change is not None else None
+                )
 
     # Stage 6a: VQC
     # Merge dataset results from ALL n_features configs per encoding so that
@@ -1000,21 +1225,25 @@ def analyze_equivariant_vs_general(
 def analyze_barren_plateau_onset(
     profiles: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """7.5 / H4: Regression of log(gradient_variance) vs depth per encoding family."""
+    """7.5 / H4: Regression of log(gradient_variance) vs depth per encoding family.
+
+    One point per measured circuit: the Stage 5 gradient variance paired with
+    the Stage 1 depth *of the same circuit* (``trainability_records``, joined
+    on the full configuration). Profiles without records contribute their
+    single headline configuration.
+    """
     all_depths: list[float] = []
     all_log_vars: list[float] = []
     all_families: list[str] = []
     all_names: list[str] = []
 
-    # Collect data from scaling (multiple n_features per encoding)
     for name, p in profiles.items():
-        train_scaling = p.get("trainability_scaling")
-        depth_scaling = p.get("depth_scaling")
+        records = p.get("trainability_records")
         family = p.get("family", "Unknown")
-        if train_scaling and depth_scaling:
-            for nf in train_scaling:
-                gv = train_scaling[nf]
-                depth = depth_scaling.get(nf)
+        if records:
+            for record in records:
+                gv = record.get("gradient_variance")
+                depth = record.get("depth")
                 if gv is not None and gv > 0 and depth is not None:
                     all_depths.append(float(depth))
                     all_log_vars.append(float(np.log(gv)))
@@ -1120,6 +1349,7 @@ def analyze_barren_plateau_onset(
         }
 
     return {
+        "n_points": len(all_depths),
         "per_family": per_family,
         "depth_partial_corr": depth_partial_corr,
         "depth_partial_p": depth_partial_p,

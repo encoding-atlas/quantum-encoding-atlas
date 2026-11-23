@@ -186,8 +186,13 @@ print([p.name for p in rank_encodings(by="kernel_target_alignment", limit=3)])
 
 # The Pareto-optimal set across accuracy, depth, trainability, and noise
 print(sorted(p.name for p in pareto_front()))
-# ['angle', 'basis', 'higher_order_angle', 'swap_equivariant']
+# ['angle']
 ```
+
+On the benchmark's own objectives, `angle` is at least as good as every other
+encoding on all four at once, so it is the whole Pareto front. Its trainability
+lead over `swap_equivariant`, `higher_order_angle`, `basis` and `amplitude` is
+within their bootstrap confidence intervals, so read that one margin as a tie.
 
 ### Benchmark encodings on your own data
 
